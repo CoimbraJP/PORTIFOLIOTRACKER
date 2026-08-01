@@ -33,10 +33,13 @@ export interface LoadedPortfolio {
  * irrelevante perto do custo de manutenção.
  *
  * Tudo dentro de `withRls`: o banco recusa linha de outro tenant mesmo que o
- * `where` daqui esteja errado.
+ * `where` daqui esteja errado. E o `where` daqui filtra por tenant mesmo que o
+ * RLS falhe. As duas camadas existem justamente porque cada uma cobre a falha
+ * da outra.
  */
 export async function loadPositions(
   userId: string,
+  tenantId: string,
   display: DisplaySettings,
 ): Promise<LoadedPortfolio> {
   return withRls(userId, async (tx) => {
@@ -63,7 +66,22 @@ export async function loadPositions(
       .innerJoin(instrument, eq(position.instrumentId, instrument.id))
       .innerJoin(wallet, eq(position.walletId, wallet.id))
       .innerJoin(assetClass, eq(wallet.assetClassId, assetClass.id))
-      .where(and(isNull(position.deletedAt), isNull(wallet.deletedAt)))
+      // O filtro de tenant é EXPLÍCITO, além do RLS.
+      //
+      // A promessa do projeto são duas camadas independentes de isolamento
+      // (CLAUDE.md §2.3), e esta consulta tinha só uma: sem `where`, ela
+      // devolvia o que a policy deixasse passar. Basta o wrapper de RLS falhar
+      // — uma transação que não abriu, um papel com BYPASSRLS — para a carteira
+      // de todo mundo aparecer na tela de qualquer um.
+      //
+      // Com as duas, é preciso que AS DUAS falhem para vazar.
+      .where(
+        and(
+          eq(position.tenantId, tenantId),
+          isNull(position.deletedAt),
+          isNull(wallet.deletedAt),
+        ),
+      )
 
     if (rows.length === 0) {
       return { positions: [], wallets: [], missingQuotes: [] }

@@ -85,7 +85,7 @@ export async function loadClassWorkspace(
     positions: allPositions,
     wallets: walletMeta,
     missingQuotes,
-  } = await loadPositions(userId, display)
+  } = await loadPositions(userId, tenantId, display)
   const kindByWallet = new Map(walletMeta.map((w) => [w.id, w.kind]))
 
   const snapshots = (await withRls(userId, (tx) =>

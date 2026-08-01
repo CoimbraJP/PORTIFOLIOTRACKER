@@ -34,7 +34,7 @@ export async function loadPortfolio(
   tenantId: string,
 ): Promise<PortfolioResult> {
   const display = await loadDisplaySettings(tenantId)
-  const { positions, wallets, missingQuotes } = await loadPositions(userId, display)
+  const { positions, wallets, missingQuotes } = await loadPositions(userId, tenantId, display)
 
   const totalValue = sum(positions.map((p) => p.currentValue))
   const totalCost = sum(positions.map((p) => p.totalCost))

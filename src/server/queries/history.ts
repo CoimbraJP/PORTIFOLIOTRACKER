@@ -81,7 +81,13 @@ export async function loadHistory(
   const display = await loadDisplaySettings(tenantId)
 
   return withRls(userId, async (tx) => {
-    const conditions = [isNull(transaction.deletedAt), isNull(position.deletedAt)]
+    // Filtro de tenant explícito, além do RLS. Duas camadas independentes:
+    // é preciso que as duas falhem para um lançamento alheio aparecer aqui.
+    const conditions = [
+      eq(transaction.tenantId, tenantId),
+      isNull(transaction.deletedAt),
+      isNull(position.deletedAt),
+    ]
 
     if (filters.classSlug) conditions.push(eq(assetClass.slug, filters.classSlug))
     if (filters.walletId) conditions.push(eq(wallet.id, filters.walletId))
@@ -155,12 +161,12 @@ export async function loadHistory(
       .selectDistinct({ slug: assetClass.slug, name: assetClass.name })
       .from(wallet)
       .innerJoin(assetClass, eq(wallet.assetClassId, assetClass.id))
-      .where(isNull(wallet.deletedAt))
+      .where(and(eq(wallet.tenantId, tenantId), isNull(wallet.deletedAt)))
 
     const wallets = await tx
       .select({ id: wallet.id, name: wallet.name })
       .from(wallet)
-      .where(isNull(wallet.deletedAt))
+      .where(and(eq(wallet.tenantId, tenantId), isNull(wallet.deletedAt)))
 
     return { entries, classes, wallets, total: entries.length }
   })

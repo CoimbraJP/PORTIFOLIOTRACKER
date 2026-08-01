@@ -119,8 +119,10 @@ export async function loadIncome(
       .innerJoin(instrument, eq(position.instrumentId, instrument.id))
       .innerJoin(wallet, eq(position.walletId, wallet.id))
       .innerJoin(assetClass, eq(wallet.assetClassId, assetClass.id))
+      // Filtro de tenant explícito, além do RLS. Ver `loadPositions`.
       .where(
         and(
+          eq(transaction.tenantId, tenantId),
           inArray(transaction.type, [...INCOME_TYPES]),
           isNull(transaction.deletedAt),
           isNull(position.deletedAt),
