@@ -67,9 +67,19 @@ export const getTenantContext = cache(async (): Promise<TenantContext | null> =>
   }
 })
 
-/** Versão que interrompe o render e manda para o login. Use nas páginas. */
+/**
+ * Versão que interrompe o render. Use nas páginas.
+ *
+ * Sem usuário vai para o login. COM usuário mas sem tenant vai para
+ * `/auth/erro` — nunca para o login, porque o middleware devolveria um usuário
+ * logado de `/login` para `/`, que cairia aqui de novo. O laço deixava a tela
+ * piscando entre as duas rotas até o navegador desistir, e o sintoma era "o
+ * login não faz nada", sem pista alguma do motivo.
+ */
 export async function requireTenant(): Promise<TenantContext> {
   const context = await getTenantContext()
-  if (!context) redirect('/login')
-  return context
+  if (context) return context
+
+  const user = await getSessionUser()
+  redirect(user ? '/auth/erro?motivo=sem-tenant' : '/login')
 }

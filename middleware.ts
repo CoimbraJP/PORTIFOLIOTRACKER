@@ -13,26 +13,39 @@ const PUBLIC_ROUTES = ['/login', '/auth/callback', '/auth/erro']
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          for (const { name, value } of cookiesToSet) {
-            request.cookies.set(name, value)
-          }
-          response = NextResponse.next({ request })
-          for (const { name, value, options } of cookiesToSet) {
-            response.cookies.set(name, value, options)
-          }
-        },
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  // Falta de configuração precisa DIZER o que falta.
+  //
+  // Sem esta guarda, `createServerClient(undefined, undefined)` lança dentro do
+  // middleware e a plataforma responde `MIDDLEWARE_INVOCATION_FAILED` — um erro
+  // que não aponta para lugar nenhum e manda o desenvolvedor procurar bug no
+  // código quando o problema é uma variável ausente no painel.
+  if (!url || !anonKey) {
+    return new NextResponse(
+      'Configuração ausente: defina NEXT_PUBLIC_SUPABASE_URL e ' +
+        'NEXT_PUBLIC_SUPABASE_ANON_KEY nas variáveis de ambiente e refaça o deploy.',
+      { status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' } },
+    )
+  }
+
+  const supabase = createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll()
+      },
+      setAll(cookiesToSet) {
+        for (const { name, value } of cookiesToSet) {
+          request.cookies.set(name, value)
+        }
+        response = NextResponse.next({ request })
+        for (const { name, value, options } of cookiesToSet) {
+          response.cookies.set(name, value, options)
+        }
       },
     },
-  )
+  })
 
   // getUser valida o token contra o servidor de auth. Não trocar por
   // getSession: ele apenas lê o cookie, que é dado vindo do cliente.

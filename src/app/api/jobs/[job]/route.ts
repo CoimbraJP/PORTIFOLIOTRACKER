@@ -31,6 +31,24 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ job: string }> },
 ) {
+  return executar(request, params)
+}
+
+/**
+ * O cron da Vercel dispara GET, não POST.
+ *
+ * Mesma função, mesma verificação de segredo. Aceitar só POST faria o cron
+ * responder 405 todo dia em silêncio — e o sintoma seria o patrimônio parar de
+ * atualizar sozinho, sem nenhum erro visível.
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ job: string }> },
+) {
+  return executar(request, params)
+}
+
+async function executar(request: NextRequest, params: Promise<{ job: string }>) {
   const secret = process.env.JOBS_SECRET
 
   if (!secret) {
