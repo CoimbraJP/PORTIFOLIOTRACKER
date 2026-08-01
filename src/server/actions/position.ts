@@ -1,0 +1,375 @@
+'use server'
+
+import { randomUUID } from 'node:crypto'
+import { revalidatePath } from 'next/cache'
+import { and, eq, isNull, or } from 'drizzle-orm'
+import { money } from '@/core/money/decimal'
+import { convertMoney } from '@/core/money/display'
+import { assetClass as assetClassConfig } from '@/config/asset-classes'
+import type { AssetClassSlug } from '@/core/types/portfolio'
+import { getDb } from '@/db/client'
+import { withRls } from '@/db/rls'
+import {
+  assetClass,
+  instrument,
+  position,
+  quote,
+  tickerCatalog,
+  transaction,
+  wallet,
+} from '@/db/schema'
+import { requireTenant } from '@/server/auth/session'
+import { dailySnapshotJob } from '@/server/jobs/daily-snapshot'
+import { recomputePosition } from '@/server/services/recompute-position'
+import { newPositionSchema } from '@/server/validation/position'
+
+export interface ActionResult {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Adiciona um ativo a uma carteira.
+ *
+ * Grava uma TRANSAÇÃO de compra e manda recalcular. Em nenhum momento este
+ * código decide qual é a quantidade ou o preço médio da posição — quem responde
+ * isso é o motor de ledger. Ver CLAUDE.md §2.1.
+ *
+ * Tudo numa transação só: carteira, instrumento, posição, lançamento e
+ * recálculo. Falha no meio não pode deixar uma posição sem a compra que a
+ * originou.
+ */
+export async function createPosition(raw: unknown): Promise<ActionResult> {
+  const context = await requireTenant()
+
+  const parsed = newPositionSchema.safeParse(raw)
+  if (!parsed.success) {
+    const first = parsed.error.issues[0]
+    return { ok: false, error: first?.message ?? 'Dados inválidos.' }
+  }
+
+  const input = parsed.data
+  const slug = input.classSlug as AssetClassSlug
+  const definition = assetClassConfig(slug)
+
+  // Instrumento é COMPARTILHADO entre tenants — é o que faz a cotação do PETR4
+  // ser buscada uma vez e servir todo mundo. Só entra no acervo comum o que o
+  // catálogo conhece: símbolo vindo da B3, da CoinGecko ou da Twelve Data é
+  // fato de mercado.
+  //
+  // Ticker que o catálogo não conhece vira instrumento PRIVADO do tenant. Não é
+  // punição a quem cadastra ativo obscuro: é que um erro de digitação não pode
+  // sujar o acervo dos outros usuários, e "KLBN44" no acervo comum ficaria lá
+  // para sempre. Privado, o estrago é de quem digitou e some quando ele apagar.
+  //
+  // A verificação é do SERVIDOR. O formulário já pergunta, mas confiar nele
+  // deixaria a decisão nas mãos de quem manda a requisição.
+  const catalogo = definition.privateInstrument
+    ? null
+    : await findInCatalog(slug, input.symbol)
+
+  const isPrivate = definition.privateInstrument || catalogo === null
+
+  try {
+    await withRls(context.user.id, async (tx) => {
+      // --- classe ---------------------------------------------------------
+      const [classRow] = await tx
+        .select({ id: assetClass.id })
+        .from(assetClass)
+        .where(eq(assetClass.slug, slug))
+        .limit(1)
+
+      if (!classRow) throw new Error(`Classe "${slug}" não existe no banco.`)
+
+      // --- carteira -------------------------------------------------------
+      let walletId = input.walletId
+
+      if (walletId) {
+        // O `walletId` vem do cliente e não pode ser aceito de palavra.
+        //
+        // Duas coisas são verificadas aqui, e nenhuma delas o RLS cobre: uma
+        // chave estrangeira não passa por policy, então um id forjado apontando
+        // para a carteira de outro tenant seria gravado sem reclamação. E a
+        // carteira precisa ser DESTA classe — é o que impede um CDB de acabar
+        // dentro de uma carteira de ações.
+        const [alvo] = await tx
+          .select({ id: wallet.id })
+          .from(wallet)
+          .where(
+            and(
+              eq(wallet.id, walletId),
+              eq(wallet.tenantId, context.tenantId),
+              eq(wallet.assetClassId, classRow.id),
+              isNull(wallet.deletedAt),
+            ),
+          )
+          .limit(1)
+
+        if (!alvo) {
+          throw new Error(
+            `Esta ${definition.walletTerm.one.toLowerCase()} não pertence a ${definition.name}.`,
+          )
+        }
+      }
+
+      if (!walletId) {
+        const name = input.newWalletName?.trim()
+        if (!name) throw new Error(`Informe o nome da ${definition.walletTerm.one.toLowerCase()}.`)
+
+        const [created] = await tx
+          .insert(wallet)
+          .values({
+            tenantId: context.tenantId,
+            assetClassId: classRow.id,
+            name,
+            kind: slug === 'cripto' ? 'SELF_CUSTODY' : 'OTHER',
+          })
+          .returning({ id: wallet.id })
+
+        walletId = created!.id
+      }
+
+      // --- instrumento ----------------------------------------------------
+      const symbol = input.symbol.toUpperCase()
+
+      const [existingInstrument] = await tx
+        .select({ id: instrument.id })
+        .from(instrument)
+        .where(
+          and(
+            eq(instrument.symbol, symbol),
+            isPrivate ? eq(instrument.tenantId, context.tenantId) : eq(instrument.isGlobal, true),
+          ),
+        )
+        .limit(1)
+
+      const instrumentId =
+        existingInstrument?.id ??
+        (
+          await tx
+            .insert(instrument)
+            .values({
+              tenantId: isPrivate ? context.tenantId : null,
+              isGlobal: !isPrivate,
+              symbol,
+              name: input.name?.trim() || catalogo?.name || symbol,
+              kind: definition.instrumentKind,
+              // A moeda vem do catálogo: uma ação da NYSE é cotada em dólar, e
+              // gravar BRL aqui faria a leitura tratar US$ 300 como R$ 300.
+              currency: catalogo?.currency ?? 'BRL',
+              // Logo e ids externos já vieram na sincronização do catálogo.
+              // Descartá-los obrigaria o ativo a esperar a próxima cotação para
+              // ganhar ícone — e, no caso da cripto, a nunca ganhar preço, já
+              // que a CoinGecko é indexada por id e não por ticker.
+              logoUrl: catalogo?.logoUrl ?? null,
+              logoSyncedAt: catalogo?.logoUrl ? new Date() : null,
+              externalIds: catalogo?.externalIds ?? {},
+            })
+            .returning({ id: instrument.id })
+        )[0]!.id
+
+      // --- posição --------------------------------------------------------
+      const occurredAt = input.occurredAt ?? new Date().toISOString().slice(0, 10)
+
+      const [existingPosition] = await tx
+        .select({ id: position.id })
+        .from(position)
+        .where(
+          and(
+            eq(position.walletId, walletId),
+            eq(position.instrumentId, instrumentId),
+            isNull(position.deletedAt),
+          ),
+        )
+        .limit(1)
+
+      const positionId =
+        existingPosition?.id ??
+        (
+          await tx
+            .insert(position)
+            .values({
+              tenantId: context.tenantId,
+              walletId,
+              instrumentId,
+              openedAt: occurredAt,
+            })
+            .returning({ id: position.id })
+        )[0]!.id
+
+      // --- lançamento -----------------------------------------------------
+      //
+      // Um ativo internacional é digitado em dólar, mas o LEDGER vive em reais.
+      // O custo é convertido pelo câmbio do dia da compra e é assim que ele
+      // fica para sempre — é o que a Receita considera e o que descreve quanto
+      // o patrimônio realmente cresceu. Nada se perde: o lançamento guarda a
+      // moeda digitada e a taxa aplicada, então o valor original em dólar é
+      // sempre `unit_price / fx_rate`.
+      if (input.entryCurrency === 'USD' && !definition.foreignEntry) {
+        throw new Error(`${definition.name} não aceita lançamento em dólar.`)
+      }
+
+      const rate = input.entryCurrency === 'USD' ? money(input.entryRate ?? '0') : money(1)
+
+      if (rate.isZero() || rate.isNegative()) {
+        throw new Error('Informe a cotação do dólar na data da compra.')
+      }
+
+      const quantity = money(input.quantity)
+      const unitCost = convertMoney(money(input.unitCost), input.entryCurrency, 'BRL', rate)
+      const gross = quantity.times(unitCost)
+
+      await tx.insert(transaction).values({
+        tenantId: context.tenantId,
+        positionId,
+        type: 'BUY',
+        occurredAt: new Date(`${occurredAt}T12:00:00Z`),
+        quantity: quantity.toFixed(10),
+        unitPrice: unitCost.toFixed(10),
+        grossAmount: gross.toFixed(10),
+        netAmount: gross.toFixed(10),
+        currency: input.entryCurrency,
+        fxRate: rate.toFixed(10),
+        source: 'MANUAL',
+        idempotencyKey: `manual:${randomUUID()}`,
+      })
+
+      // --- cotação informada ----------------------------------------------
+      //
+      // O usuário disse quanto vale hoje. Vira cotação manual, que a próxima
+      // sincronização sobrescreve quando um provider real assumir o
+      // instrumento.
+      //
+      // Diferente do custo, esta é gravada na MOEDA DIGITADA. Cotação é preço
+      // de mercado, e o mercado cota a Apple em dólar — converter aqui
+      // congelaria o câmbio de hoje num dado que a leitura já sabe converter.
+      if (input.unitValue) {
+        await tx.insert(quote).values({
+          instrumentId,
+          price: money(input.unitValue).toFixed(10),
+          currency: input.entryCurrency,
+          asOf: new Date(),
+          provider: 'manual',
+        })
+      }
+
+      await recomputePosition(tx, positionId)
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido.'
+    return { ok: false, error: message }
+  }
+
+  revalidatePath('/')
+  revalidatePath('/carteiras')
+  revalidatePath(`/carteiras/${slug}`)
+
+  return { ok: true }
+}
+
+interface CatalogMatch {
+  name: string
+  currency: string
+  logoUrl: string | null
+  externalIds: Record<string, string>
+}
+
+/**
+ * Procura o símbolo no catálogo daquela classe.
+ *
+ * Devolve a linha inteira, não um sim/não: o catálogo já traz logo, moeda e os
+ * ids externos, e descartá-los para depois buscar tudo de novo seria trabalho
+ * repetido. O `external_ids` importa mais do que parece — é por ele que a
+ * CoinGecko resolve a moeda certa, e sem ele uma cripto fora da lista embutida
+ * ficaria sem cotação para sempre.
+ *
+ * Fora do `withRls` de propósito: o catálogo é dado de mercado, sem tenant.
+ */
+async function findInCatalog(
+  classSlug: AssetClassSlug,
+  symbol: string,
+): Promise<CatalogMatch | null> {
+  const [row] = await getDb()
+    .select({
+      name: tickerCatalog.name,
+      currency: tickerCatalog.currency,
+      logoUrl: tickerCatalog.logoUrl,
+      externalIds: tickerCatalog.externalIds,
+    })
+    .from(tickerCatalog)
+    .where(
+      and(eq(tickerCatalog.classSlug, classSlug), eq(tickerCatalog.symbol, symbol.toUpperCase())),
+    )
+    .limit(1)
+
+  if (!row) return null
+
+  return {
+    name: row.name,
+    currency: row.currency,
+    logoUrl: row.logoUrl,
+    externalIds: (row.externalIds ?? {}) as Record<string, string>,
+  }
+}
+
+/**
+ * Apaga um ativo e tudo que pende dele.
+ *
+ * Apagado DE VERDADE, não arquivado — exceção deliberada à regra de soft delete
+ * (CLAUDE.md §2.9). O motivo é que a regra existe para preservar patrimônio, e
+ * um erro de digitação não é patrimônio: é entulho que ninguém vai querer
+ * auditar depois. Lançamento, avaliação e anexo saem junto por cascade.
+ *
+ * O soft delete continua valendo para o resto: encerrar uma posição vendida é
+ * fato econômico e permanece no histórico.
+ */
+export async function deletePosition(positionId: string): Promise<ActionResult> {
+  const context = await requireTenant()
+
+  if (!/^[0-9a-f-]{36}$/i.test(positionId)) {
+    return { ok: false, error: 'Ativo inválido.' }
+  }
+
+  try {
+    await withRls(context.user.id, async (tx) => {
+      // O RLS já barra posição de outro tenant; o `tenantId` no `where` é a
+      // segunda camada, para o caso de a policy ser afrouxada um dia.
+      const [alvo] = await tx
+        .delete(position)
+        .where(and(eq(position.id, positionId), eq(position.tenantId, context.tenantId)))
+        .returning({ id: position.id })
+
+      if (!alvo) throw new Error('Ativo não encontrado.')
+    })
+
+    // A foto de hoje já pode ter sido tirada COM o valor errado, e snapshot não
+    // se recalcula sozinho. Sem isto, apagar a posição limparia as telas e
+    // deixaria o pico no gráfico de evolução para sempre — no único lugar onde
+    // o usuário não olharia para conferir.
+    await dailySnapshotJob()
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido.' }
+  }
+
+  revalidatePath('/', 'layout')
+  return { ok: true }
+}
+
+/** Carteiras da classe, para o seletor do formulário. */
+export async function listWallets(slug: string) {
+  const context = await requireTenant()
+
+  return withRls(context.user.id, (tx) =>
+    tx
+      .select({ id: wallet.id, name: wallet.name })
+      .from(wallet)
+      .innerJoin(assetClass, eq(wallet.assetClassId, assetClass.id))
+      .where(
+        and(
+          eq(assetClass.slug, slug),
+          isNull(wallet.deletedAt),
+          or(isNull(assetClass.tenantId), eq(assetClass.tenantId, context.tenantId)),
+        ),
+      ),
+  )
+}

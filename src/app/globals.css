@@ -1,0 +1,98 @@
+@import 'tailwindcss';
+@import '../styles/tokens.css';
+
+/* ---------------------------------------------------------------------------
+   Base
+--------------------------------------------------------------------------- */
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Números não podem "dançar" quando o valor atualiza. */
+  .numeric,
+  table {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+
+  ::selection {
+    background-color: var(--selection-bg);
+  }
+
+  /* Scrollbar discreta */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 999px;
+    border: 3px solid var(--color-canvas);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-fg-subtle);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Utilitários de identidade
+--------------------------------------------------------------------------- */
+@layer utilities {
+  /* Glass — apenas em superfícies que FLUTUAM sobre conteúdo.
+     Cards do dashboard não usam. Ver docs/02-design-system.md §8. */
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px) saturate(1.3);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3);
+    border: 1px solid var(--glass-border);
+  }
+
+  .glow-accent {
+    box-shadow: var(--glow-accent);
+  }
+
+  /* Modo privacidade: borra todo valor sensível de uma vez, sem re-render. */
+  [data-privacy='on'] .sensitive {
+    filter: blur(9px);
+    user-select: none;
+    pointer-events: none;
+  }
+  .sensitive {
+    transition: filter var(--dur-base) var(--ease-out-soft);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Movimento é preferência, não imposição.
+--------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

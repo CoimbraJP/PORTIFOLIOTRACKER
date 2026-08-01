@@ -1,0 +1,114 @@
+/* ---------------------------------------------------------------------------
+   TOKENS — fonte única de verdade visual do produto.
+
+   Nenhum valor hexadecimal pode existir fora deste arquivo.
+   Se uma cor não está aqui, ela não existe no produto.
+   Ver docs/02-design-system.md
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* --- Superfícies ------------------------------------------------------ */
+  /* Preto puro é evitado de propósito: mata a profundidade e apaga as sombras. */
+  --color-canvas: #08090c;
+  --color-surface: #0d0f14;
+  --color-elevated: #13161d;
+  --color-raised: #181c25;
+
+  /* --- Linhas ----------------------------------------------------------- */
+  --color-line: #1d212b;
+  --color-line-strong: #2a2f3d;
+
+  /* --- Texto ------------------------------------------------------------ */
+  --color-fg: #f2f4f8;
+  --color-fg-muted: #9ba3b4;
+  --color-fg-subtle: #5c6478;
+
+  /* --- Destaque: ciano elétrico ----------------------------------------- */
+  /* Verde e vermelho já são semânticos (alta/baixa). O ciano não briga com
+     nenhum dos dois e evita o azul institucional de banco. */
+  --color-accent: #22d3ee;
+  --color-accent-soft: #67e8f9;
+  --color-accent-dim: #0e7490;
+
+  /* --- Semântica -------------------------------------------------------- */
+  --color-positive: #34d399;
+  --color-negative: #f87171;
+  --color-warning: #fbbf24;
+
+  /* --- Cores por classe de ativo ---------------------------------------- */
+  --color-class-acoes-br: #22d3ee;
+  --color-class-stocks: #818cf8;
+  --color-class-fiis: #2dd4bf;
+  --color-class-etfs: #38bdf8;
+  --color-class-etfs-int: #a78bfa;
+  --color-class-cripto: #fbbf24;
+  --color-class-renda-fixa: #34d399;
+  --color-class-imoveis: #fb923c;
+  --color-class-emprestimos: #f472b6;
+  --color-class-alternativos: #c084fc;
+  --color-class-empresas: #60a5fa;
+  --color-class-outros: #94a3b8;
+
+  /* --- Tipografia ------------------------------------------------------- */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --text-display: 3rem;
+  --text-display--line-height: 3.25rem;
+  --text-display--letter-spacing: -0.03em;
+  --text-display--font-weight: 600;
+
+  --text-metric: 1.75rem;
+  --text-metric--line-height: 2.125rem;
+  --text-metric--letter-spacing: -0.02em;
+  --text-metric--font-weight: 600;
+
+  --text-label: 0.75rem;
+  --text-label--line-height: 1rem;
+  --text-label--letter-spacing: 0.02em;
+  --text-label--font-weight: 500;
+
+  --text-caption: 0.6875rem;
+  --text-caption--line-height: 0.875rem;
+  --text-caption--letter-spacing: 0.06em;
+  --text-caption--font-weight: 500;
+
+  /* --- Raio ------------------------------------------------------------- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* --- Elevação — sombras difusas e baixas, nunca duras ----------------- */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.55);
+
+  /* --- Movimento -------------------------------------------------------- */
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-soft: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   Variáveis fora do @theme — usadas em CSS bruto, não geram utilitários.
+--------------------------------------------------------------------------- */
+:root {
+  /* Glows — todos derivados do accent, todos abaixo de 0.35 de opacidade.
+     Nenhum componente escreve uma cor de brilho: sempre referencia um destes. */
+  --glow-accent: 0 0 0 1px rgb(34 211 238 / 0.28), 0 8px 28px rgb(34 211 238 / 0.14);
+  --glow-button: 0 0 20px rgb(34 211 238 / 0.18);
+  --glow-control: 0 0 16px rgb(34 211 238 / 0.16);
+  /* Interruptor ligado. Verde aqui significa "ativo", não lucro. */
+  --glow-positive: 0 0 16px rgb(52 211 153 / 0.18);
+  --glow-dot: 0 0 10px rgb(34 211 238 / 0.7);
+  --glow-card-hover: 0 12px 32px rgb(0 0 0 / 0.55), 0 0 24px rgb(34 211 238 / 0.1);
+
+  --glass-bg: rgb(19 22 29 / 0.72);
+  --glass-border: rgb(255 255 255 / 0.06);
+  --selection-bg: rgb(34 211 238 / 0.25);
+
+  --dur-instant: 120ms;
+  --dur-fast: 180ms;
+  --dur-base: 260ms;
+  --dur-slow: 420ms;
+}
