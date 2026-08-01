@@ -82,17 +82,32 @@ export async function signInWithPassword(raw: unknown): Promise<CredentialsResul
   redirect('/')
 }
 
+/**
+ * Traduz só o que dá para traduzir com certeza.
+ *
+ * A versão anterior transformava qualquer mensagem contendo "disabled" em
+ * "Cadastro desativado no momento". Parecia gentil e era pior: mascarava
+ * mensagens distintas — provedor de e-mail desligado, cadastro por e-mail
+ * bloqueado, projeto pausado — sob um diagnóstico único e errado, e mandava
+ * quem estava depurando procurar no lugar errado.
+ *
+ * Quando não há certeza, o texto original passa adiante. Mensagem em inglês é
+ * ruim; mensagem traduzida para a causa errada é muito pior.
+ */
 function traduzir(mensagem: string): string {
   const texto = mensagem.toLowerCase()
 
   if (texto.includes('already registered') || texto.includes('already been registered')) {
     return 'Este usuário já existe. Escolha outro ou entre com ele.'
   }
-  if (texto.includes('password')) {
-    return 'Senha muito curta ou fraca. Use ao menos 8 caracteres.'
+  if (texto.includes('password') && texto.includes('least')) {
+    return 'Senha muito curta. Use ao menos 8 caracteres.'
   }
-  if (texto.includes('signups not allowed') || texto.includes('disabled')) {
-    return 'Cadastro desativado no momento.'
+  if (texto.includes('signups not allowed')) {
+    return 'Cadastro desativado no Supabase (Allow new users to sign up).'
+  }
+  if (texto.includes('email logins are disabled') || texto.includes('email signups are disabled')) {
+    return 'Provedor de e-mail desligado no Supabase (Sign In / Providers → Email).'
   }
 
   return mensagem

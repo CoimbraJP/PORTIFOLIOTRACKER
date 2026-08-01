@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, ArrowLeft } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, Eye, EyeOff, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Field, Input } from '@/components/ui/input'
 import { signInWithPassword, signUpWithPassword } from '@/server/actions/credentials'
@@ -22,7 +22,15 @@ export function CredentialsForm({ mode }: { mode: 'entrar' | 'criar' }) {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [recoveryEmail, setRecoveryEmail] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
   const [pending, startTransition] = useTransition()
+
+  const tipoSenha = showPassword ? 'text' : 'password'
+  const curta = password.length > 0 && password.length < 8
+  // Só compara depois que a pessoa começou a repetir. Marcar "não confere" no
+  // primeiro caractere seria acusar um erro que ainda não existe.
+  const conferindo = confirmPassword.length > 0
+  const confere = password === confirmPassword
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -51,24 +59,68 @@ export function CredentialsForm({ mode }: { mode: 'entrar' | 'criar' }) {
         />
       </Field>
 
-      <Field label="Senha" hint={criando ? 'Ao menos 8 caracteres' : undefined}>
-        <Input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete={criando ? 'new-password' : 'current-password'}
-        />
+      <Field
+        label="Senha"
+        hint={criando ? 'Ao menos 8 caracteres' : undefined}
+        error={criando && curta ? 'Faltam caracteres' : undefined}
+      >
+        <div className="relative">
+          <Input
+            type={tipoSenha}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete={criando ? 'new-password' : 'current-password'}
+            className="pr-10"
+          />
+          {/* Ver o que se digitou reduz erro de digitação em senha longa — que
+              é justamente a senha que queremos incentivar. Um único botão
+              revela os dois campos: esconder um e mostrar o outro não protege
+              nada e dobra o número de cliques. */}
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-fg-subtle transition-colors hover:text-fg"
+          >
+            {showPassword ? <EyeOff size={15} strokeWidth={2} /> : <Eye size={15} strokeWidth={2} />}
+          </button>
+        </div>
       </Field>
 
       {criando ? (
         <>
           <Field label="Repita a senha">
-            <Input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              autoComplete="new-password"
-            />
+            <div className="relative">
+              <Input
+                type={tipoSenha}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                aria-invalid={conferindo && !confere}
+                className="pr-10"
+              />
+              {conferindo ? (
+                <span
+                  className={
+                    confere
+                      ? 'absolute right-3 top-1/2 -translate-y-1/2 text-positive'
+                      : 'absolute right-3 top-1/2 -translate-y-1/2 text-negative'
+                  }
+                >
+                  {confere ? (
+                    <Check size={15} strokeWidth={2.4} />
+                  ) : (
+                    <X size={15} strokeWidth={2.4} />
+                  )}
+                </span>
+              ) : null}
+            </div>
+
+            {conferindo && !confere ? (
+              <p className="mt-1.5 text-caption normal-case tracking-normal text-negative">
+                As senhas não conferem
+              </p>
+            ) : null}
           </Field>
 
           <Field
@@ -112,7 +164,12 @@ export function CredentialsForm({ mode }: { mode: 'entrar' | 'criar' }) {
         </p>
       ) : null}
 
-      <Button type="submit" variant="primary" className="w-full" disabled={pending}>
+      <Button
+        type="submit"
+        variant="primary"
+        className="w-full"
+        disabled={pending || (criando && (!confere || curta || password.length === 0))}
+      >
         {pending ? 'Aguarde…' : criando ? 'Criar conta' : 'Entrar'}
       </Button>
 
