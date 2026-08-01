@@ -7,11 +7,27 @@ import { z } from 'zod'
  * usuário. Então geramos um endereço interno a partir do nome escolhido. Ele
  * nunca é mostrado nem digitado; é detalhe de armazenamento.
  *
- * `.invalid` é reservado pela RFC 2606 justamente para isto: garante que o
- * endereço nunca vai existir de verdade, então nenhuma mensagem some no mundo
- * achando que chegou a alguém.
+ * A escolha óbvia seria `.invalid`, reservado pela RFC 2606 justamente para
+ * endereços que não devem existir. O Supabase recusa: valida o domínio contra a
+ * lista de sufixos públicos, e `.invalid` não está nela.
+ *
+ * A saída é um subdomínio do PRÓPRIO app. Passa na validação e, como o domínio
+ * é nosso, ninguém pode registrá-lo depois para receber mensagens destinadas a
+ * essas contas. Configurável porque o endereço do app muda quando sai do
+ * `vercel.app`.
  */
-const ANON_DOMAIN = 'anon.invalid'
+function anonDomain(): string {
+  return process.env.ANON_EMAIL_DOMAIN?.trim() || 'anon.portifoliotracker.vercel.app'
+}
+
+/**
+ * Domínios que já foram usados como identidade anônima.
+ *
+ * Trocar `ANON_EMAIL_DOMAIN` não pode fazer as contas já criadas deixarem de
+ * ser reconhecidas como anônimas — elas passariam a exibir o endereço interno
+ * como se fosse um contato de verdade.
+ */
+const LEGACY_ANON_DOMAINS = ['anon.invalid', 'anon.local']
 
 /**
  * Nome de usuário.
@@ -76,12 +92,15 @@ export type SignInInput = z.input<typeof signInSchema>
  */
 export function toAuthEmail(identifier: string): string {
   const limpo = identifier.trim().toLowerCase()
-  return limpo.includes('@') ? limpo : `${limpo}@${ANON_DOMAIN}`
+  return limpo.includes('@') ? limpo : `${limpo}@${anonDomain()}`
 }
 
 /** Se a conta é anônima, ou seja, sem e-mail real por trás. */
 export function isAnonymousEmail(email: string | null | undefined): boolean {
-  return Boolean(email?.toLowerCase().endsWith(`@${ANON_DOMAIN}`))
+  const texto = email?.toLowerCase()
+  if (!texto) return false
+
+  return [anonDomain(), ...LEGACY_ANON_DOMAINS].some((dominio) => texto.endsWith(`@${dominio}`))
 }
 
 /** O apelido de volta, para exibir sem revelar o endereço interno. */
