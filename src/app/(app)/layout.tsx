@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import { AppShell } from '@/components/layout/app-shell'
+import { MASTER_NAVIGATION } from '@/config/navigation'
+import { isMaster } from '@/server/auth/master'
 import { requireTenant } from '@/server/auth/session'
 
 /**
@@ -13,5 +15,14 @@ import { requireTenant } from '@/server/auth/session'
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const context = await requireTenant()
 
-  return <AppShell user={context.user}>{children}</AppShell>
+  // A navegação do operador é resolvida no SERVIDOR. Mandar a lista completa
+  // para o cliente com uma flag entregaria a existência da rota a quem não
+  // deve saber dela.
+  const master = await isMaster()
+
+  return (
+    <AppShell user={context.user} extraItems={master ? MASTER_NAVIGATION : []}>
+      {children}
+    </AppShell>
+  )
 }

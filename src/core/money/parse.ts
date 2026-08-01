@@ -19,6 +19,30 @@
  * Devolve string, não `number`: o `Decimal` converte a partir do texto sem
  * passar por ponto flutuante em momento algum.
  */
+/**
+ * Devolve o número ao formato brasileiro, com separador de milhar.
+ *
+ * Serve ao campo de digitação: quem escreve `65000` precisa VER `65.000` para
+ * perceber que digitou sessenta e cinco mil, e não seiscentos e cinquenta mil.
+ * Ler dígito por dígito é onde o erro passa.
+ *
+ * Texto que não é número volta intacto — o usuário ainda está digitando, e
+ * apagar o que ele escreveu no meio da frase seria pior do que não formatar.
+ *
+ * O agrupamento é feito por regex sobre a string, não por `Number`: converter
+ * para ponto flutuante para depois formatar perderia precisão exatamente nos
+ * valores grandes, que são os que mais precisam da conferência visual.
+ */
+export function formatDecimalInput(raw: string): string {
+  const parsed = parseDecimalInput(raw)
+  if (parsed === '' || !/^\d+(\.\d+)?$/.test(parsed)) return raw
+
+  const [inteiro = '', decimal] = parsed.split('.')
+  const agrupado = inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+
+  return decimal ? `${agrupado},${decimal}` : agrupado
+}
+
 export function parseDecimalInput(raw: string): string {
   const texto = raw.trim()
   if (texto === '') return ''

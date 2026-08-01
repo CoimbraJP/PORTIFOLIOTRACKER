@@ -23,6 +23,15 @@ export const features = {
 
   /** Comparação com CDI e IBOV — Fase 7. */
   benchmarks: false,
+
+  /**
+   * "Apagar todos os dados", em Configurações.
+   *
+   * Ligada enquanto o produto está em teste, onde recomeçar do zero é rotina.
+   * Antes de abrir para usuários reais isto vira `false`: um botão que apaga
+   * patrimônio inteiro não pertence a um produto de patrimônio.
+   */
+  dangerZone: true,
 } as const
 
 export type FeatureFlag = keyof typeof features

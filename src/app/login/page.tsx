@@ -1,4 +1,6 @@
 import { Suspense } from 'react'
+import Link from 'next/link'
+import { ShieldOff } from 'lucide-react'
 import { FadeIn } from '@/components/motion/fade-in'
 import { Skeleton } from '@/components/ui/skeleton'
 import { LoginButton } from './login-button'
@@ -36,15 +38,28 @@ export default async function LoginPage({
           </p>
         ) : null}
 
-        <div className="mt-8">
+        <div className="mt-8 space-y-3">
           <Suspense fallback={<Skeleton className="h-12 w-full" />}>
             <LoginButton />
           </Suspense>
+
+          {/* A alternativa sem identificação vem logo abaixo, com o mesmo peso
+              visual. Quem tem patrimônio alto costuma hesitar em entregar a
+              conta pessoal, e esconder essa opção num link discreto seria
+              tratá-la como saída de segunda. */}
+          <Link
+            href="/login/senha"
+            className="flex w-full items-center justify-center gap-2.5 rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-fg transition-colors duration-[180ms] hover:border-accent/40"
+          >
+            <ShieldOff size={16} strokeWidth={1.9} />
+            Entrar sem identificação
+          </Link>
         </div>
 
         <p className="mt-6 text-caption normal-case leading-relaxed tracking-normal text-fg-subtle">
           Ao entrar, uma área de trabalho é criada para você. Seus dados ficam
-          isolados por tenant, com Row Level Security no banco.
+          isolados por conta, com Row Level Security no banco. Entrar sem
+          identificação não pede e-mail nem nome — só um usuário e uma senha.
         </p>
       </FadeIn>
     </div>

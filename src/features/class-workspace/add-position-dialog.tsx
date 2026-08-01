@@ -5,10 +5,11 @@ import { Dialog } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select } from '@/components/ui/input'
 import type { ClassWorkspaceView } from '@/core/view/class-workspace-view'
-import { parseDecimalInput } from '@/core/money/parse'
+import { formatDecimalInput } from '@/core/money/parse'
 import { isKnownTicker } from '@/server/actions/catalog'
 import type { TickerSuggestion } from '@/server/actions/catalog'
 import type { NewPositionInput } from '@/server/validation/position'
+import { PositionSummary, type PositionDraft } from './position-summary'
 import { TickerField } from './ticker-field'
 
 const NEW_WALLET = '__new__'
@@ -49,12 +50,14 @@ export function AddPositionDialog({
   const [entryRate, setEntryRate] = useState(workspace.usdBrl ?? '')
   const [errors, setErrors] = useState<Record<string, string>>({})
   /**
-   * Código digitado que não está no catálogo e ainda não foi confirmado.
+   * `form` enquanto edita, `confirm` na revisão.
    *
-   * Guarda o texto, não um booleano: assim, mudar o código depois de confirmar
-   * derruba a confirmação em vez de deixá-la valendo para outro ticker.
+   * A confirmação não é cerimônia: é onde o número interpretado aparece por
+   * extenso. Foi a ausência dela que deixou um câmbio lido como 50.800 passar
+   * sem ninguém notar.
    */
-  const [unknownConfirmed, setUnknownConfirmed] = useState<string | null>(null)
+  const [step, setStep] = useState<'form' | 'confirm'>('form')
+  const [unknownTicker, setUnknownTicker] = useState(false)
   const [checking, setChecking] = useState(false)
   /**
    * Último nome que o catálogo preencheu sozinho.
@@ -78,7 +81,8 @@ export function AddPositionDialog({
     setUnitCost('')
     setUnitValue('')
     setNewWalletName('')
-    setUnknownConfirmed(null)
+    setStep('form')
+    setUnknownTicker(false)
     // A moeda e a taxa NÃO são resetadas: quem lança um ativo em dólar
     // costuma lançar o próximo também, e redigitar o câmbio a cada vez é
     // convite a erro de digitação.
@@ -100,29 +104,21 @@ export function AddPositionDialog({
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
-    // Código fora do catálogo exige confirmação explícita.
-    //
-    // Não bloqueia: ativo obscuro que a lista não cobre precisa ser
-    // cadastrável. Mas um dígito a mais em "KLBN4" criaria um ativo que nunca
-    // terá cotação, e o usuário só descobriria semanas depois — tarde demais
-    // para lembrar o que quis digitar.
-    const codigo = symbol.trim().toUpperCase()
-
-    if (unknownConfirmed !== codigo) {
+    // Ticker fora do catálogo não bloqueia — vira aviso na revisão. Ativo
+    // obscuro precisa continuar cadastrável; o que não pode é um dígito a mais
+    // em "KLBN4" passar despercebido e virar um ativo que nunca terá cotação.
+    if (workspace.hasCatalog) {
       setChecking(true)
-      const conhecido = await isKnownTicker(workspace.slug, codigo).finally(() =>
-        setChecking(false),
+      const conhecido = await isKnownTicker(workspace.slug, symbol.trim().toUpperCase()).finally(
+        () => setChecking(false),
       )
-
-      if (!conhecido) {
-        setErrors({
-          symbol: `"${codigo}" não está no catálogo. Confira o código e envie de novo para cadastrar assim mesmo.`,
-        })
-        setUnknownConfirmed(codigo)
-        return
-      }
+      setUnknownTicker(!conhecido)
     }
 
+    setStep('confirm')
+  }
+
+  function confirmar() {
     onSubmit({
       classSlug: workspace.slug,
       walletId: creatingWallet ? '' : walletId,
@@ -140,6 +136,23 @@ export function AddPositionDialog({
     reset()
   }
 
+  const draft: PositionDraft = {
+    symbol: symbol.trim().toUpperCase(),
+    name: name.trim(),
+    walletLabel: creatingWallet
+      ? newWalletName.trim()
+      : (workspace.walletOptions.find((o) => o.id === walletId)?.name ?? ''),
+    walletTerm: walletTerm.one,
+    quantity: isQuantitative ? quantity : '1',
+    quantityLabel: labels.quantity,
+    unitCost,
+    unitCostLabel: labels.unitCost,
+    entryCurrency: emDolar ? 'USD' : 'BRL',
+    entryRate,
+    classSlug: workspace.slug,
+    unknownTicker,
+  }
+
   return (
     <Dialog
       open={open}
@@ -147,6 +160,7 @@ export function AddPositionDialog({
       title={labels.addAction}
       description={`Em ${workspace.name}. O cálculo acontece no servidor.`}
     >
+      {step === 'form' ? (
       <form onSubmit={handleSubmit} className="space-y-5">
         <Field
           label={walletTerm.one}
@@ -186,7 +200,7 @@ export function AddPositionDialog({
                 value={symbol}
                 onChange={(v) => {
                   setSymbol(v)
-                  setUnknownConfirmed(null)
+                  setUnknownTicker(false)
                 }}
                 onPick={(escolha: TickerSuggestion) => {
                   setSymbol(escolha.symbol)
@@ -202,7 +216,7 @@ export function AddPositionDialog({
                   }
 
                   setErrors((e) => ({ ...e, symbol: '' }))
-                  setUnknownConfirmed(null)
+                  setUnknownTicker(false)
                 }}
                 placeholder={placeholderForSymbol(workspace.slug)}
                 invalid={Boolean(errors.symbol)}
@@ -257,6 +271,7 @@ export function AddPositionDialog({
                   inputMode="decimal"
                   value={entryRate}
                   onChange={(e) => setEntryRate(e.target.value)}
+                  onBlur={(e) => setEntryRate(formatDecimalInput(e.target.value))}
                   placeholder="5,0800"
                   className="w-32 tabular-nums"
                 />
@@ -272,6 +287,7 @@ export function AddPositionDialog({
                 inputMode="decimal"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
+                onBlur={(e) => setQuantity(formatDecimalInput(e.target.value))}
                 placeholder="0,00"
               />
             </Field>
@@ -282,6 +298,9 @@ export function AddPositionDialog({
               inputMode="decimal"
               value={unitCost}
               onChange={(e) => setUnitCost(e.target.value)}
+              // Formata ao SAIR do campo, não a cada tecla: reescrever o texto
+              // enquanto a pessoa digita move o cursor e atrapalha a correção.
+              onBlur={(e) => setUnitCost(formatDecimalInput(e.target.value))}
               placeholder="0,00"
             />
           </Field>
@@ -291,63 +310,41 @@ export function AddPositionDialog({
               inputMode="decimal"
               value={unitValue}
               onChange={(e) => setUnitValue(e.target.value)}
+              onBlur={(e) => setUnitValue(formatDecimalInput(e.target.value))}
               placeholder="0,00"
             />
           </Field>
         </div>
 
-        {/* Mostra o que vai ser gravado antes de gravar. Conversão silenciosa
-            é como o usuário descobre um custo errado só meses depois. */}
-        {emDolar ? (
-          <p className="text-[0.8125rem] text-fg-muted">
-            Custo total:{' '}
-            <strong className="font-medium tabular-nums text-fg">
-              {previewCustoBrl(quantity, unitCost, entryRate, isQuantitative)}
-            </strong>
-          </p>
-        ) : null}
-
         <div className="flex items-center justify-end gap-2 border-t border-line pt-5">
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" variant="primary" disabled={pending || checking}>
-            {pending ? 'Calculando…' : checking ? 'Conferindo…' : 'Adicionar'}
+          <Button type="submit" variant="primary" disabled={checking}>
+            {checking ? 'Conferindo…' : 'Revisar'}
           </Button>
         </div>
       </form>
+      ) : (
+        <div className="space-y-5">
+          <PositionSummary draft={draft} />
+
+          <div className="flex items-center justify-end gap-2 border-t border-line pt-5">
+            {/* Voltar preserva tudo que foi digitado: quem revisou e viu um
+                número errado precisa corrigir aquele campo, não recomeçar. */}
+            <Button type="button" variant="ghost" onClick={() => setStep('form')} disabled={pending}>
+              Voltar e editar
+            </Button>
+            <Button type="button" variant="primary" onClick={confirmar} disabled={pending}>
+              {pending ? 'Gravando…' : 'Confirmar'}
+            </Button>
+          </div>
+        </div>
+      )}
     </Dialog>
   )
 }
 
-/**
- * Prévia do custo em reais.
- *
- * Só uma prévia: quem calcula de verdade é o servidor, com `Decimal`. Aqui
- * `Number` basta porque o resultado não é gravado em lugar nenhum — mas o
- * usuário precisa VER o número antes de confirmar.
- */
-function previewCustoBrl(
-  quantity: string,
-  unitCost: string,
-  rate: string,
-  isQuantitative: boolean,
-): string {
-  // O MESMO parser do servidor. Prévia que interpreta diferente do que grava
-  // é pior do que prévia nenhuma: confirma um número que não será gravado.
-  const paraNumero = (v: string) => Number(parseDecimalInput(v))
-
-  const qtd = isQuantitative ? paraNumero(quantity) : 1
-  const custo = paraNumero(unitCost)
-  const taxa = paraNumero(rate)
-
-  if (![qtd, custo, taxa].every((n) => Number.isFinite(n) && n > 0)) return '—'
-
-  return (qtd * custo * taxa).toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  })
-}
 
 function placeholderForWallet(slug: string): string {
   if (slug === 'imoveis') return 'Campinas'

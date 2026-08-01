@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion } from 'motion/react'
 import { PanelLeft, PanelLeftClose, Search, X } from 'lucide-react'
-import { NAVIGATION } from '@/config/navigation'
+import { NAVIGATION, type NavItem } from '@/config/navigation'
 import { icon } from '@/lib/icons'
 import type { SessionUser } from '@/server/auth/types'
 import { AccountMenu } from './account-menu'
@@ -35,7 +35,15 @@ export function SidebarHandle() {
   )
 }
 
-export function Sidebar({ user }: { user: SessionUser }) {
+export function Sidebar({
+  user,
+  extraItems = [],
+}: {
+  user: SessionUser
+  /** Itens do operador. Vêm do servidor — ver `MASTER_NAVIGATION`. */
+  extraItems?: readonly NavItem[]
+}) {
+  const items = [...NAVIGATION, ...extraItems]
   const pathname = usePathname()
   const { collapsed, toggleSidebar, query, setQuery, placeholder } = useShell()
 
@@ -68,7 +76,7 @@ export function Sidebar({ user }: { user: SessionUser }) {
             </div>
 
             <nav className="flex flex-col gap-0.5 px-3 py-4">
-              {NAVIGATION.map((item) => {
+              {items.map((item) => {
                 const Icon = icon(item.icon)
                 const active =
                   item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)

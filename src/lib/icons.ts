@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   Settings,
   TrendingUp,
+  Users,
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
@@ -43,6 +44,7 @@ const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard,
   Settings,
   TrendingUp,
+  Users,
   Wallet,
 }
 

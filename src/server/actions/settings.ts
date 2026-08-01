@@ -7,6 +7,7 @@ import { getDb } from '@/db/client'
 import { instrument, instrumentLogoOverride, tenant } from '@/db/schema'
 import { withRls } from '@/db/rls'
 import { requireTenant } from '@/server/auth/session'
+import { isMaster, requireMaster } from '@/server/auth/master'
 
 const currencySchema = z.enum(['BRL', 'USD'])
 
@@ -85,6 +86,11 @@ const logoSchema = z.object({
  * em tabela própria, com RLS, e apagar a linha restaura o automático.
  */
 export async function saveLogoOverride(raw: unknown): Promise<ActionResult> {
+  // Restrito ao operador. A verificação é AQUI, não só no botão: esconder na
+  // interface não protege — a Server Action continua sendo um endpoint, e quem
+  // souber o nome dela chama direto.
+  await requireMaster()
+
   const context = await requireTenant()
 
   const parsed = logoSchema.safeParse(raw)
@@ -136,6 +142,11 @@ export interface InstrumentLogoRow {
 
 /** Ativos do tenant com o logo atual, para a tela de personalização. */
 export async function listInstrumentLogos(): Promise<InstrumentLogoRow[]> {
+  // Sem permissão, lista vazia em vez de erro: a tela simplesmente não mostra
+  // a seção, e ninguém vê uma mensagem de acesso negado sobre algo que nem
+  // deveria saber que existe.
+  if (!(await isMaster())) return []
+
   const context = await requireTenant()
   const db = getDb()
 
