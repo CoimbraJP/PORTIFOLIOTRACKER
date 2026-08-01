@@ -42,6 +42,19 @@ parte do patrimônio. O lado devedor nunca é modelado.
    Hoje é um usuário por tenant (sem `membership`), mas o `tenant_id` continua
    em todo lugar — é ele que preserva o caminho para o multiusuário.
 
+   **Duas camadas significa DUAS.** Toda consulta de leitura filtra por
+   `tenant_id` no `where`, além do RLS. Confiar só no RLS já falhou uma vez, e
+   quando falha não avisa: devolve dado alheio como se fosse normal.
+
+   **Toda tabela leva `.enableRLS()` no schema do Drizzle.** Sem isso, o
+   `drizzle-kit push` entende que o RLS deve estar desligado e o DESLIGA a cada
+   execução, sem dizer nada — deixando `relforcerowsecurity = true` e
+   `relrowsecurity = false`, combinação que nenhuma mão humana produz. Foi assim
+   que o isolamento caiu em produção sem ninguém perceber.
+
+   Os testes em `tests/tenant-isolation.test.ts` são o alarme disso. Se eles
+   ficarem vermelhos, nada mais importa até voltarem ao verde.
+
 4. **`core/` é TypeScript puro.** Sem React, sem ORM, sem `fetch`. Se precisa de
    I/O, está na camada errada.
 

@@ -35,7 +35,7 @@ export const assetClass = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [index('asset_class_tenant_idx').on(t.tenantId, t.sortOrder)],
-)
+).enableRLS()
 
 export type AssetClassRow = typeof assetClass.$inferSelect
 export type NewAssetClass = typeof assetClass.$inferInsert

@@ -18,7 +18,7 @@ export const tenant = pgTable('tenant', {
   settings: jsonb('settings').notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}).enableRLS()
 
 export type Tenant = typeof tenant.$inferSelect
 export type NewTenant = typeof tenant.$inferInsert

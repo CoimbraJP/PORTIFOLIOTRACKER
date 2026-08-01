@@ -26,7 +26,7 @@ export const wallet = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [index('wallet_tenant_class_idx').on(t.tenantId, t.assetClassId)],
-)
+).enableRLS()
 
 export type WalletRow = typeof wallet.$inferSelect
 export type NewWallet = typeof wallet.$inferInsert

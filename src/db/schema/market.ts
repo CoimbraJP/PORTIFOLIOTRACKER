@@ -53,7 +53,7 @@ export const quote = pgTable(
     // O índice que a busca de "cotação atual" usa de verdade.
     index('quote_instrument_created_idx').on(t.instrumentId, t.createdAt.desc()),
   ],
-)
+).enableRLS()
 
 export const fxRate = pgTable(
   'fx_rate',
@@ -66,7 +66,7 @@ export const fxRate = pgTable(
     provider: text('provider').notNull(),
   },
   (t) => [index('fx_rate_pair_idx').on(t.base, t.quoteCurrency, t.asOf.desc())],
-)
+).enableRLS()
 
 /**
  * Evento corporativo.
@@ -113,7 +113,7 @@ export const corporateAction = pgTable(
       sql`coalesce(${t.paymentDate}, ${t.exDate})`,
     ),
   ],
-)
+).enableRLS()
 
 /**
  * Catálogo de tickers conhecidos.
@@ -157,7 +157,7 @@ export const tickerCatalog = pgTable(
     // Busca por prefixo do código, que é como as pessoas digitam.
     index('ticker_catalog_search_idx').on(t.classSlug, t.symbol),
   ],
-)
+).enableRLS()
 
 export type TickerCatalogRow = typeof tickerCatalog.$inferSelect
 export type QuoteRow = typeof quote.$inferSelect

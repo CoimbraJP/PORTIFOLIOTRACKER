@@ -39,7 +39,7 @@ export const valuation = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [index('valuation_position_date_idx').on(t.positionId, t.valuedAt.desc())],
-)
+).enableRLS()
 
 /**
  * Foto do patrimônio no fim do dia.
@@ -64,7 +64,7 @@ export const portfolioSnapshot = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex('snapshot_tenant_date_idx').on(t.tenantId, t.date)],
-)
+).enableRLS()
 
 export const attachment = pgTable(
   'attachment',
@@ -86,7 +86,7 @@ export const attachment = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => [index('attachment_position_idx').on(t.positionId)],
-)
+).enableRLS()
 
 export type ValuationRow = typeof valuation.$inferSelect
 export type SnapshotRow = typeof portfolioSnapshot.$inferSelect

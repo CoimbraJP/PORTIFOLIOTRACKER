@@ -66,7 +66,7 @@ export const transaction = pgTable(
     index('transaction_tenant_time_idx').on(t.tenantId, t.occurredAt),
     index('transaction_transfer_group_idx').on(t.transferGroupId),
   ],
-)
+).enableRLS()
 
 export type TransactionRow = typeof transaction.$inferSelect
 export type NewTransaction = typeof transaction.$inferInsert

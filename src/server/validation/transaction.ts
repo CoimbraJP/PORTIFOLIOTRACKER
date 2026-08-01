@@ -96,3 +96,33 @@ export const transactionSchema = z.discriminatedUnion('type', [
 
 export type TransactionInput = z.input<typeof transactionSchema>
 export type TransactionData = z.output<typeof transactionSchema>
+
+/**
+ * Lançamento em edição.
+ *
+ * Só compra, venda e provento. Transferência tem duas pernas amarradas pelo
+ * mesmo grupo — editar uma delas quebraria a conservação de custo entre as
+ * carteiras, e o certo ali é apagar e refazer. Reavaliação vive em outra tabela.
+ *
+ * O TIPO não é editável. Trocar uma compra por um dividendo não é corrigir um
+ * lançamento, é apagar um e criar outro — e a interface deve dizer isso em vez
+ * de fingir que é a mesma coisa.
+ */
+export const editTransactionSchema = z.discriminatedUnion('type', [
+  buyOrSellSchema.extend({ id: z.string().uuid() }),
+  incomeSchema.extend({ id: z.string().uuid() }),
+])
+
+export type EditTransactionInput = z.input<typeof editTransactionSchema>
+
+/** Tipos que a interface deixa editar. Os demais só podem ser apagados. */
+export const EDITABLE_TYPES = [
+  'BUY',
+  'SELL',
+  'DIVIDEND',
+  'JCP',
+  'INCOME',
+  'RENT',
+  'INTEREST',
+  'STAKING',
+] as const

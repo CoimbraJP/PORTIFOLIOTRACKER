@@ -26,6 +26,6 @@ export const instrumentLogoOverride = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.tenantId, t.instrumentId] })],
-)
+).enableRLS()
 
 export type InstrumentLogoOverrideRow = typeof instrumentLogoOverride.$inferSelect

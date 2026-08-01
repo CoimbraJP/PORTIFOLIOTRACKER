@@ -66,14 +66,19 @@ export function useSearchScope(placeholder: string): string {
   return query
 }
 
-/** Recolhe a lateral ao entrar numa tela que pede largura total. */
-export function useCollapsedShell(): void {
-  const { setCollapsed } = useShell()
-
-  useEffect(() => {
-    setCollapsed(true)
-  }, [setCollapsed])
-}
+/**
+ * Recolher a lateral automaticamente foi REMOVIDO.
+ *
+ * A tela de classe fazia isso para ganhar largura, e o efeito na prática era
+ * outro: a navegação sumia sem o usuário ter pedido, e ele voltava a abri-la
+ * toda vez. Movimento que a pessoa não iniciou é interpretado como defeito,
+ * mesmo quando a intenção era ajudar.
+ *
+ * A lateral agora só se move pelo botão. Mantido como função vazia para que o
+ * comportamento anterior não volte por descuido — quem tentar reativar
+ * encontra este comentário antes.
+ */
+export function useCollapsedShell(): void {}
 
 /** Normaliza para busca: minúsculas e sem acento. */
 export function matches(haystack: string, needle: string): boolean {

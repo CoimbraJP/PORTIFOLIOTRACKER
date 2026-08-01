@@ -64,7 +64,7 @@ export const position = pgTable(
     uniqueIndex('position_wallet_instrument_idx').on(t.walletId, t.instrumentId),
     index('position_tenant_idx').on(t.tenantId, t.walletId),
   ],
-)
+).enableRLS()
 
 export type PositionRow = typeof position.$inferSelect
 export type NewPosition = typeof position.$inferInsert

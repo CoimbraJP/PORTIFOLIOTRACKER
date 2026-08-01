@@ -53,7 +53,7 @@ export const instrument = pgTable(
       .where(sql`${t.isGlobal} = false`),
     index('instrument_symbol_idx').on(t.symbol),
   ],
-)
+).enableRLS()
 
 export type InstrumentRow = typeof instrument.$inferSelect
 export type NewInstrument = typeof instrument.$inferInsert
