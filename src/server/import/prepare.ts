@@ -2,112 +2,170 @@ import 'server-only'
 
 import {
   detectNumberFormat,
+  diagnosticar,
   guessMapping,
   mapRows,
   parseCsv,
-  diagnosticar,
   type ColumnMap,
   type ImportedRow,
 } from '@/core/import'
-
 import { assetClass as assetClassConfig } from '@/config/asset-classes'
 import type { AssetClassSlug } from '@/core/types/portfolio'
 import { fetchFxHistory, preencherLacunas } from '@/integrations/fx/history'
 import { buildClassLookup } from './class-lookup'
-import type { ImportInput } from '@/server/validation/import'
+import type { ArquivoInput, ImportInput } from '@/server/validation/import'
 
-export interface Prepared {
+export interface PreparedFile {
+  nome: string
   rows: ImportedRow[]
   mapping: ColumnMap
   headers: string[]
   delimiter: string
-  formato: 'br' | 'us'
-  /** Impedimento do arquivo INTEIRO. Quando vem preenchido, nada é importado. */
+  /** Impedimento deste arquivo. Quando vem preenchido, ele inteiro fica de fora. */
   bloqueio?: string
 }
 
+export interface Prepared {
+  arquivos: PreparedFile[]
+  /** Como foi a busca de câmbio. Ausente quando não havia preço em dólar. */
+  fx?: FxInfo
+}
+
+export interface FxInfo {
+  fonte: 'bcb' | 'awesomeapi' | null
+  /** Quantas datas ficaram sem cotação. */
+  faltando: number
+  erro?: string
+}
+
 /**
- * Lê o arquivo e devolve o que ele diz — sem gravar nada.
+ * Lê os arquivos e devolve o que eles dizem — sem gravar nada.
  *
  * É o mesmo caminho que a pré-visualização e a gravação usam, e isso é
  * proposital: se a tela mostrasse um resultado e a gravação calculasse outro, a
  * conferência que o usuário faz antes de confirmar não valeria nada.
+ *
+ * Um arquivo bloqueado não derruba os outros. Quem sobe quatro extratos e tem
+ * um deles no formato errado quer importar os três que estão certos.
  */
 export async function prepararImportacao(input: ImportInput): Promise<Prepared> {
-  const tabela = parseCsv(input.csv)
+  const slug = input.classSlug as AssetClassSlug
+  const lidos = input.arquivos.map((arquivo) => lerArquivo(arquivo, slug, input.currency))
+
+  // Câmbio de UMA vez para a leva inteira: quatro arquivos do mesmo período
+  // pediriam quatro vezes o mesmo intervalo à mesma API.
+  const datas = lidos.flatMap((r) => (r.precisaCambio ? r.prep.rows.map((l) => l.date) : []))
+  if (datas.length === 0) return { arquivos: lidos.map((r) => r.prep) }
+
+  const cambio = await buscarCambio(datas)
+  const classes = buildClassLookup()
+
+  const arquivos = lidos.map(({ prep, arquivo, precisaCambio, formato }) => {
+    if (!precisaCambio || prep.bloqueio) return prep
+
+    const rows = mapRows(
+      parseCsv(arquivo.csv).rows,
+      prep.mapping,
+      classes,
+      { classSlug: slug, wallet: arquivo.wallet, currency: input.currency, rates: cambio.rates },
+      formato,
+    )
+
+    return { ...prep, rows }
+  })
+
+  return { arquivos, fx: cambio }
+}
+
+interface Leitura {
+  arquivo: ArquivoInput
+  prep: PreparedFile
+  precisaCambio: boolean
+  formato: 'br' | 'us'
+}
+
+/** Primeira passada: descobre estrutura, datas e se há preço em dólar. */
+function lerArquivo(
+  arquivo: ArquivoInput,
+  slug: AssetClassSlug,
+  currency: 'BRL' | 'USD' | undefined,
+): Leitura {
+  const tabela = parseCsv(arquivo.csv)
   const mapping = guessMapping(tabela.headers)
   const formato = detectNumberFormat(tabela.rows.flat())
 
-  const base: Prepared = {
+  const base: PreparedFile = {
+    nome: arquivo.nome,
     rows: [],
     mapping,
     headers: tabela.headers,
     delimiter: tabela.delimiter,
-    formato,
   }
 
   const impedimento = diagnosticar(tabela.headers, mapping)
-  if (impedimento) return { ...base, bloqueio: impedimento }
-
-  const slug = input.classSlug as AssetClassSlug
-  const definition = assetClassConfig(slug)
-  const classes = buildClassLookup()
-
-  const defaults = {
-    classSlug: slug,
-    wallet: input.wallet,
-    currency: input.currency,
+  if (impedimento) {
+    return { arquivo, prep: { ...base, bloqueio: impedimento }, precisaCambio: false, formato }
   }
 
-  // Primeira passada: descobre as datas. Sem ela não há como saber de quais
-  // dias buscar o câmbio, porque a data só existe depois de interpretada.
-  const primeira = mapRows(tabela.rows, mapping, classes, defaults, formato)
+  const rows = mapRows(
+    tabela.rows,
+    mapping,
+    buildClassLookup(),
+    { classSlug: slug, wallet: arquivo.wallet, currency },
+    formato,
+  )
 
-  const precisaCambio = primeira.filter((r) => r.currency === 'USD' && !r.erro?.includes('câmbio'))
-  const temUsd = primeira.some((r) => r.currency === 'USD')
+  const definition = assetClassConfig(slug)
+  const temUsd = rows.some((r) => r.currency === 'USD')
 
   if (temUsd && !definition.foreignEntry) {
     return {
-      ...base,
-      rows: primeira,
-      bloqueio: `${definition.name} não aceita lançamento em dólar.`,
+      arquivo,
+      prep: { ...base, rows, bloqueio: `${definition.name} não aceita lançamento em dólar.` },
+      precisaCambio: false,
+      formato,
     }
   }
 
-  if (!temUsd) return { ...base, rows: primeira }
-
-  const rates = await buscarCambio([...precisaCambio, ...primeira].map((r) => r.date))
-
-  // Segunda passada, agora com o câmbio de cada dia em mãos.
-  return { ...base, rows: mapRows(tabela.rows, mapping, classes, { ...defaults, rates }, formato) }
+  return { arquivo, prep: { ...base, rows }, precisaCambio: temUsd, formato }
 }
 
 /**
- * Câmbio de todas as datas do arquivo.
+ * Câmbio de todas as datas da leva.
  *
  * Uma chamada cobrindo o intervalo inteiro, não uma por linha: um arquivo de
  * dez anos viraria mil requisições, e a API cortaria muito antes disso.
  *
- * Falha de rede devolve vazio em vez de estourar. A consequência é a linha em
- * dólar parar com "sem câmbio", que é exatamente o que deve acontecer — o
- * contrário seria importar custo convertido por uma taxa inventada.
+ * Falha não vira taxa inventada — a linha em dólar para, e é isso mesmo. Mas o
+ * MOTIVO sobe junto: sem ele o usuário vê vinte linhas dizendo "sem câmbio" e
+ * conclui que o arquivo dele está errado, quando quem caiu foi a fonte.
  */
-async function buscarCambio(datas: string[]): Promise<Record<string, string>> {
+async function buscarCambio(datas: string[]): Promise<FxInfo & { rates: Record<string, string> }> {
   const validas = datas.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort()
   const inicio = validas[0]
   const fim = validas[validas.length - 1]
 
-  if (!inicio || !fim) return {}
+  if (!inicio || !fim) return { rates: {}, fonte: null, faltando: 0 }
 
   try {
-    // Recua um pouco o início: negócio de segunda-feira precisa da sexta
-    // anterior quando o dia não teve pregão.
+    // Recua o início: negócio de segunda-feira precisa da sexta anterior
+    // quando o dia não teve pregão, e feriadão chega a quatro dias.
     const desde = new Date(`${inicio}T12:00:00Z`)
-    desde.setUTCDate(desde.getUTCDate() - 7)
+    desde.setUTCDate(desde.getUTCDate() - 10)
 
-    const bruto = await fetchFxHistory(desde.toISOString().slice(0, 10), fim)
-    return preencherLacunas(bruto, validas)
-  } catch {
-    return {}
+    const resultado = await fetchFxHistory(desde.toISOString().slice(0, 10), fim)
+    const rates = preencherLacunas(resultado.rates, validas)
+    const faltando = new Set(validas.filter((d) => !rates[d])).size
+
+    return { rates, fonte: resultado.fonte, faltando, ...(resultado.erro ? { erro: resultado.erro } : {}) }
+  } catch (error) {
+    // Nunca em silêncio: a importação inteira depende disto, e vinte linhas
+    // dizendo "sem câmbio" não contam ao usuário que a fonte é que caiu.
+    return {
+      rates: {},
+      fonte: null,
+      faltando: new Set(validas).size,
+      erro: error instanceof Error ? error.message : 'erro desconhecido',
+    }
   }
 }

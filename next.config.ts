@@ -17,6 +17,16 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizePackageImports: ['lucide-react', 'recharts'],
+    serverActions: {
+      /**
+       * O padrão é 1 MB, e a importação manda o CSV inteiro para o servidor —
+       * de propósito, para o servidor reler o arquivo em vez de confiar nos
+       * números convertidos pelo navegador. Quatro extratos de uma vez passam
+       * folgado de 1 MB, e o erro que aparece quando estoura não diz que o
+       * corpo era grande demais: diz que a ação falhou.
+       */
+      bodySizeLimit: '6mb',
+    },
   },
 }
 

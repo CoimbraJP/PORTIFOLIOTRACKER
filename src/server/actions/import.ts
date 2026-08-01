@@ -9,14 +9,21 @@ import { gravarImportacao, type ImportReport } from '@/server/import/commit'
 import { prepararImportacao } from '@/server/import/prepare'
 import { importSchema } from '@/server/validation/import'
 
+export interface FilePreview {
+  nome: string
+  /** Por que este arquivo inteiro ficou de fora. */
+  bloqueio?: string
+  /** Como cada campo foi encontrado, para o usuário conferir antes de gravar. */
+  reconhecido?: { campo: string; coluna: string }[]
+  rows: ImportedRow[]
+}
+
 export interface PreviewResult {
   ok: boolean
   error?: string
-  headers?: string[]
-  delimiter?: string
-  /** Como cada campo foi encontrado, para o usuário conferir antes de gravar. */
-  reconhecido?: { campo: string; coluna: string }[]
-  rows?: ImportedRow[]
+  arquivos?: FilePreview[]
+  /** Como foi a busca de câmbio, quando houve preço em dólar. */
+  fx?: { fonte: 'bcb' | 'awesomeapi' | null; faltando: number; erro?: string }
 }
 
 export interface CommitResult {
@@ -40,7 +47,7 @@ const ROTULOS: Record<string, string> = {
 }
 
 /**
- * Lê o arquivo e mostra o que entendeu. NÃO grava nada.
+ * Lê os arquivos e mostra o que entendeu. NÃO grava nada.
  *
  * A pré-visualização não é cortesia: é onde o usuário descobre que a coluna
  * "Preço" era o preço de fechamento, ou que uma linha veio com o valor em outra
@@ -56,33 +63,35 @@ export async function previewImport(raw: unknown): Promise<PreviewResult> {
   }
 
   try {
-    const prep = await prepararImportacao(parsed.data)
-
-    if (prep.bloqueio) {
-      return { ok: false, error: prep.bloqueio, headers: prep.headers }
-    }
+    const preparado = await prepararImportacao(parsed.data)
 
     return {
       ok: true,
-      headers: prep.headers,
-      delimiter: prep.delimiter,
-      reconhecido: Object.entries(prep.mapping).map(([campo, indice]) => ({
-        campo: ROTULOS[campo] ?? campo,
-        coluna: prep.headers[indice] ?? '',
+      ...(preparado.fx ? { fx: preparado.fx } : {}),
+      arquivos: preparado.arquivos.map((prep) => ({
+        nome: prep.nome,
+        bloqueio: prep.bloqueio,
+        reconhecido: Object.entries(prep.mapping).map(([campo, indice]) => ({
+          campo: ROTULOS[campo] ?? campo,
+          coluna: prep.headers[indice] ?? '',
+        })),
+        rows: prep.rows,
       })),
-      rows: prep.rows,
     }
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : 'Não consegui ler o arquivo.' }
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Não consegui ler os arquivos.',
+    }
   }
 }
 
 /**
- * Grava o arquivo conferido.
+ * Grava os arquivos conferidos.
  *
- * Lê o CSV de novo em vez de receber as linhas da tela. É mais trabalho e é de
- * propósito: aceitar números já convertidos pelo navegador deixaria o custo de
- * cada compra na mão do cliente, e o servidor não teria como perceber a
+ * Lê os CSVs de novo em vez de receber as linhas da tela. É mais trabalho e é
+ * de propósito: aceitar números já convertidos pelo navegador deixaria o custo
+ * de cada compra na mão do cliente, e o servidor não teria como perceber a
  * diferença entre cem e cem mil (CLAUDE.md §2.5).
  */
 export async function commitImport(raw: unknown): Promise<CommitResult> {
@@ -94,14 +103,26 @@ export async function commitImport(raw: unknown): Promise<CommitResult> {
   }
 
   try {
-    const prep = await prepararImportacao(parsed.data)
-    if (prep.bloqueio) return { ok: false, error: prep.bloqueio }
+    const preparado = await prepararImportacao(parsed.data)
+
+    // Um arquivo bloqueado não impede os outros — só não entra. Barrar a leva
+    // inteira por causa de um obrigaria o usuário a subir tudo de novo sem ele.
+    const linhas = preparado.arquivos.filter((p) => !p.bloqueio).flatMap((p) => p.rows)
+
+    if (linhas.every((l) => l.erro)) {
+      const motivo =
+        preparado.fx?.erro ??
+        preparado.arquivos.find((p) => p.bloqueio)?.bloqueio ??
+        'Nenhuma linha pôde ser lida.'
+
+      return { ok: false, error: motivo }
+    }
 
     const report = await gravarImportacao(
       context.user.id,
       context.tenantId,
       parsed.data.classSlug as AssetClassSlug,
-      prep.rows,
+      linhas,
     )
 
     if (report.importados > 0) {

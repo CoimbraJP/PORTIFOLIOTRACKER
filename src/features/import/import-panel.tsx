@@ -2,33 +2,39 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, CheckCircle2, FileUp, Upload } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, FileUp, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Select } from '@/components/ui/input'
 import { ASSET_CLASSES } from '@/config/asset-classes'
-import type { ImportedRow } from '@/core/import'
 import { commitImport, previewImport, type PreviewResult } from '@/server/actions/import'
 import type { ImportReport } from '@/server/import/commit'
 import { PreviewTable } from './preview-table'
+
+interface Arquivo {
+  nome: string
+  csv: string
+  wallet: string
+}
 
 /**
  * Importação de planilha.
  *
  * O fluxo tem três passos e o do meio é o que importa: nada é gravado antes de
- * o usuário ver, linha por linha, o que o sistema entendeu do arquivo dele.
+ * o usuário ver, linha por linha, o que o sistema entendeu dos arquivos dele.
  * Depois de gravado, descobrir que a coluna errada virou preço custa desfazer
  * lançamento por lançamento.
+ *
+ * Vários arquivos de uma vez porque é assim que os dados existem: exportador de
+ * corretora e de cripto gera um por conta. Cada arquivo vira uma carteira.
  */
 export function ImportPanel() {
   const router = useRouter()
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const [csv, setCsv] = useState('')
-  const [nomeArquivo, setNomeArquivo] = useState('')
+  const [arquivos, setArquivos] = useState<Arquivo[]>([])
   const [classSlug, setClassSlug] = useState('acoes-br')
   const [currency, setCurrency] = useState<'BRL' | 'USD'>('BRL')
-  const [wallet, setWallet] = useState('')
 
   const [preview, setPreview] = useState<PreviewResult | null>(null)
   const [report, setReport] = useState<ImportReport | null>(null)
@@ -36,21 +42,44 @@ export function ImportPanel() {
   const [pending, startTransition] = useTransition()
 
   function payload() {
-    return { csv, classSlug, wallet: wallet.trim() || undefined, currency }
+    return {
+      arquivos: arquivos.map((a) => ({ nome: a.nome, csv: a.csv, wallet: a.wallet.trim() })),
+      classSlug,
+      currency,
+    }
   }
 
-  async function aoEscolherArquivo(file: File) {
-    const texto = await file.text()
-    setCsv(texto)
-    setNomeArquivo(file.name)
+  async function aoEscolher(lista: FileList) {
+    const lidos = await Promise.all(
+      [...lista].map(async (file) => ({
+        nome: file.name,
+        csv: await file.text(),
+        // O nome do arquivo costuma ser o nome da carteira — é assim que o
+        // CoinMarketCap e a maioria das corretoras exportam, um por conta.
+        // Sugestão, não decisão: o campo continua editável.
+        wallet: sugerirCarteira(file.name),
+      })),
+    )
+
+    // Acumula em vez de substituir: dá para escolher de pastas diferentes.
+    setArquivos((atual) => [
+      ...atual,
+      ...lidos.filter((novo) => !atual.some((a) => a.nome === novo.nome)),
+    ])
     setPreview(null)
     setReport(null)
     setErro(null)
+    if (inputRef.current) inputRef.current.value = ''
+  }
 
-    // O nome do arquivo costuma ser o nome da carteira — é assim que o
-    // CoinMarketCap e a maioria das corretoras exportam, um arquivo por conta.
-    // Sugestão, não decisão: o campo continua editável.
-    if (!wallet.trim()) setWallet(file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ').trim())
+  function renomear(nome: string, wallet: string) {
+    setArquivos((atual) => atual.map((a) => (a.nome === nome ? { ...a, wallet } : a)))
+    setPreview(null)
+  }
+
+  function remover(nome: string) {
+    setArquivos((atual) => atual.filter((a) => a.nome !== nome))
+    setPreview(null)
   }
 
   function conferir() {
@@ -62,7 +91,7 @@ export function ImportPanel() {
       if (resultado.ok) setPreview(resultado)
       else {
         setPreview(null)
-        setErro(resultado.error ?? 'Não consegui ler o arquivo.')
+        setErro(resultado.error ?? 'Não consegui ler os arquivos.')
       }
     })
   }
@@ -76,9 +105,7 @@ export function ImportPanel() {
       if (resultado.ok && resultado.report) {
         setReport(resultado.report)
         setPreview(null)
-        setCsv('')
-        setNomeArquivo('')
-        if (inputRef.current) inputRef.current.value = ''
+        setArquivos([])
         router.refresh()
       } else {
         setErro(resultado.error ?? 'Não foi possível importar.')
@@ -86,32 +113,34 @@ export function ImportPanel() {
     })
   }
 
-  const linhas = preview?.rows ?? []
-  const boas = linhas.filter((l) => !l.erro)
-  const ruins = linhas.filter((l) => l.erro)
-  const avisos = boas.filter((l) => l.aviso)
+  const previstos = preview?.arquivos ?? []
+  const todas = previstos.filter((a) => !a.bloqueio).flatMap((a) => a.rows)
+  const prontas = todas.filter((l) => !l.erro)
+  const comErro = todas.filter((l) => l.erro)
+  const comAviso = prontas.filter((l) => l.aviso)
 
   return (
     <div className="space-y-5">
       <Card>
-        <h2 className="text-[0.9375rem] font-semibold text-fg">1. Escolha o arquivo</h2>
+        <h2 className="text-[0.9375rem] font-semibold text-fg">1. Escolha os arquivos</h2>
         <p className="mt-1 text-[0.8125rem] leading-relaxed text-fg-subtle">
-          CSV exportado da corretora, do CoinMarketCap ou da sua própria planilha. Aceita ponto e
-          vírgula ou vírgula, número em português ou em inglês — o formato é detectado sozinho.
+          Um arquivo por carteira — pode selecionar vários de uma vez. CSV da corretora, do
+          CoinMarketCap ou da sua própria planilha. O separador e o formato do número são detectados
+          sozinhos.
         </p>
 
         <div className="mt-5 flex flex-wrap items-end gap-4">
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-line bg-elevated px-4 py-2.5 text-sm text-fg transition-colors duration-[180ms] hover:border-line-strong">
             <FileUp className="size-4 text-fg-subtle" aria-hidden />
-            {nomeArquivo || 'Selecionar arquivo'}
+            {arquivos.length > 0 ? 'Adicionar mais' : 'Selecionar arquivos'}
             <input
               ref={inputRef}
               type="file"
+              multiple
               accept=".csv,.txt,text/csv"
               className="sr-only"
               onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) void aoEscolherArquivo(file)
+                if (e.target.files?.length) void aoEscolher(e.target.files)
               }}
             />
           </label>
@@ -126,19 +155,6 @@ export function ImportPanel() {
             </Select>
           </Field>
 
-          <Field
-            label="Carteira"
-            hint="Usada nas linhas que não trazem a coluna"
-            className="w-56"
-          >
-            <input
-              value={wallet}
-              onChange={(e) => setWallet(e.target.value)}
-              placeholder="XP, Binance, Ledger…"
-              className="h-10 w-full rounded-md border border-line bg-elevated px-3 text-sm text-fg placeholder:text-fg-subtle transition-colors duration-[180ms] hover:border-line-strong focus:border-accent/60 focus:outline-none focus:shadow-[var(--glow-control)]"
-            />
-          </Field>
-
           <Field label="Moeda dos preços" className="w-40">
             <Select value={currency} onChange={(e) => setCurrency(e.target.value as 'BRL' | 'USD')}>
               <option value="BRL">Real (R$)</option>
@@ -146,10 +162,48 @@ export function ImportPanel() {
             </Select>
           </Field>
 
-          <Button onClick={conferir} disabled={!csv || pending}>
+          <Button onClick={conferir} disabled={arquivos.length === 0 || pending}>
             {pending && !preview ? 'Lendo…' : 'Conferir'}
           </Button>
         </div>
+
+        {arquivos.length > 0 ? (
+          <div className="mt-5 space-y-2">
+            <p className="text-label uppercase text-fg-subtle">
+              {arquivos.length} {arquivos.length === 1 ? 'arquivo' : 'arquivos'} — cada um vira uma
+              carteira
+            </p>
+
+            {arquivos.map((arquivo) => (
+              <div
+                key={arquivo.nome}
+                className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-elevated/50 px-4 py-3"
+              >
+                <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-fg-subtle">
+                  {arquivo.nome}
+                </span>
+                <span className="text-[0.8125rem] text-fg-subtle" aria-hidden>
+                  →
+                </span>
+                <input
+                  value={arquivo.wallet}
+                  onChange={(e) => renomear(arquivo.nome, e.target.value)}
+                  placeholder="Nome da carteira"
+                  aria-label={`Carteira de ${arquivo.nome}`}
+                  className="h-9 w-56 rounded-md border border-line bg-surface px-3 text-sm text-fg placeholder:text-fg-subtle transition-colors duration-[180ms] hover:border-line-strong focus:border-accent/60 focus:outline-none focus:shadow-[var(--glow-control)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => remover(arquivo.nome)}
+                  aria-label={`Remover ${arquivo.nome}`}
+                  className="rounded-md p-1.5 text-fg-subtle transition-colors duration-[180ms] hover:text-negative"
+                >
+                  <X className="size-4" aria-hidden />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
 
         {currency === 'USD' ? (
           <p className="mt-4 text-[0.8125rem] leading-relaxed text-fg-subtle">
@@ -168,32 +222,7 @@ export function ImportPanel() {
         </Card>
       ) : null}
 
-      {report ? (
-        <Card className="border-positive/25">
-          <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-positive" aria-hidden />
-            <div className="text-[0.8125rem] leading-relaxed text-fg">
-              <p className="font-medium">
-                {report.importados} {report.importados === 1 ? 'lançamento' : 'lançamentos'}{' '}
-                {report.importados === 1 ? 'importado' : 'importados'}
-                {report.carteiras.length > 0 ? ` em ${report.carteiras.join(', ')}` : ''}.
-              </p>
-              {report.repetidos > 0 ? (
-                <p className="mt-1 text-fg-subtle">
-                  {report.repetidos} já {report.repetidos === 1 ? 'estava' : 'estavam'} no sistema e{' '}
-                  {report.repetidos === 1 ? 'foi ignorado' : 'foram ignorados'}.
-                </p>
-              ) : null}
-              {report.comErro > 0 ? (
-                <p className="mt-1 text-fg-subtle">
-                  {report.comErro} {report.comErro === 1 ? 'linha ficou' : 'linhas ficaram'} de fora
-                  por erro no arquivo.
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </Card>
-      ) : null}
+      {report ? <Relatorio report={report} /> : null}
 
       {preview ? (
         <Card>
@@ -201,36 +230,137 @@ export function ImportPanel() {
             <div>
               <h2 className="text-[0.9375rem] font-semibold text-fg">2. Confira</h2>
               <p className="mt-1 text-[0.8125rem] leading-relaxed text-fg-subtle">
-                {boas.length} {boas.length === 1 ? 'linha pronta' : 'linhas prontas'}
-                {ruins.length > 0 ? `, ${ruins.length} com problema` : ''}
-                {avisos.length > 0 ? `, ${avisos.length} para conferir` : ''}. Nada foi gravado
+                {prontas.length} {prontas.length === 1 ? 'linha pronta' : 'linhas prontas'}
+                {comErro.length > 0 ? `, ${comErro.length} com problema` : ''}
+                {comAviso.length > 0 ? `, ${comAviso.length} para conferir` : ''}. Nada foi gravado
                 ainda.
               </p>
             </div>
 
-            <Button onClick={importar} disabled={boas.length === 0 || pending}>
+            <Button onClick={importar} disabled={prontas.length === 0 || pending}>
               <Upload className="size-4" aria-hidden />
-              {pending ? 'Importando…' : `Importar ${boas.length}`}
+              {pending ? 'Importando…' : `Importar ${prontas.length}`}
             </Button>
           </div>
 
-          {preview.reconhecido && preview.reconhecido.length > 0 ? (
-            <div className="mt-5 rounded-lg border border-line bg-elevated/50 p-4">
-              <p className="text-label uppercase text-fg-subtle">Colunas reconhecidas</p>
-              <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-1.5 text-[0.8125rem] text-fg">
-                {preview.reconhecido.map((r) => (
-                  <li key={r.campo}>
-                    <span className="text-fg-subtle">{r.campo}</span> ← {r.coluna}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+          {preview.fx ? <AvisoCambio fx={preview.fx} /> : null}
 
-          <PreviewTable rows={linhas} />
+          <div className="mt-6 space-y-8">
+            {previstos.map((arquivo) => (
+              <section key={arquivo.nome}>
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h3 className="text-[0.875rem] font-medium text-fg">{arquivo.nome}</h3>
+                  {arquivo.bloqueio ? null : (
+                    <span className="text-[0.8125rem] text-fg-subtle">
+                      {arquivo.rows.filter((r) => !r.erro).length} de {arquivo.rows.length}
+                    </span>
+                  )}
+                </div>
+
+                {arquivo.bloqueio ? (
+                  <div className="mt-3 flex items-start gap-3 rounded-lg border border-negative/25 bg-negative/[0.06] px-4 py-3">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-negative" aria-hidden />
+                    <p className="text-[0.8125rem] leading-relaxed text-fg">{arquivo.bloqueio}</p>
+                  </div>
+                ) : (
+                  <>
+                    {arquivo.reconhecido && arquivo.reconhecido.length > 0 ? (
+                      <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-[0.8125rem] text-fg">
+                        {arquivo.reconhecido.map((r) => (
+                          <li key={r.campo}>
+                            <span className="text-fg-subtle">{r.campo}</span> ← {r.coluna}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+
+                    <PreviewTable rows={arquivo.rows} />
+                  </>
+                )}
+              </section>
+            ))}
+          </div>
         </Card>
       ) : null}
     </div>
   )
 }
 
+/**
+ * O que houve com a busca de câmbio.
+ *
+ * Sem isto, uma queda da fonte aparece como vinte linhas dizendo "sem câmbio" —
+ * e o usuário conclui que o arquivo dele está errado, quando não está.
+ */
+function AvisoCambio({
+  fx,
+}: {
+  fx: { fonte: 'bcb' | 'awesomeapi' | null; faltando: number; erro?: string }
+}) {
+  const NOMES = { bcb: 'Banco Central (PTAX)', awesomeapi: 'AwesomeAPI' } as const
+
+  if (fx.fonte && fx.faltando === 0) {
+    return (
+      <p className="mt-4 text-[0.8125rem] leading-relaxed text-fg-subtle">
+        Câmbio de cada data obtido do {NOMES[fx.fonte]}.
+      </p>
+    )
+  }
+
+  return (
+    <div className="mt-4 flex items-start gap-3 rounded-lg border border-warning/25 bg-warning/[0.06] px-4 py-3">
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+      <div className="text-[0.8125rem] leading-relaxed text-fg">
+        <p>
+          {fx.fonte
+            ? `Faltou o câmbio de ${fx.faltando} ${fx.faltando === 1 ? 'data' : 'datas'}.`
+            : 'Não consegui buscar o câmbio histórico.'}{' '}
+          As linhas em dólar dessas datas ficam de fora — converter por uma taxa chutada gravaria um
+          custo errado para sempre.
+        </p>
+        {fx.erro ? <p className="mt-1 text-fg-subtle">{fx.erro}</p> : null}
+        <p className="mt-1 text-fg-subtle">
+          Alternativa: acrescente uma coluna <strong className="text-fg">Dolar na Data</strong> na
+          planilha, com a cotação de cada linha. Ela tem prioridade sobre a busca automática.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function Relatorio({ report }: { report: ImportReport }) {
+  return (
+    <Card className="border-positive/25">
+      <div className="flex items-start gap-3">
+        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-positive" aria-hidden />
+        <div className="text-[0.8125rem] leading-relaxed text-fg">
+          <p className="font-medium">
+            {report.importados} {report.importados === 1 ? 'lançamento importado' : 'lançamentos importados'}
+            {report.carteiras.length > 0 ? ` em ${report.carteiras.join(', ')}` : ''}.
+          </p>
+          {report.repetidos > 0 ? (
+            <p className="mt-1 text-fg-subtle">
+              {report.repetidos} já {report.repetidos === 1 ? 'estava' : 'estavam'} no sistema e{' '}
+              {report.repetidos === 1 ? 'foi ignorado' : 'foram ignorados'}.
+            </p>
+          ) : null}
+          {report.comErro > 0 ? (
+            <p className="mt-1 text-fg-subtle">
+              {report.comErro} {report.comErro === 1 ? 'linha ficou' : 'linhas ficaram'} de fora por
+              erro no arquivo.
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+/** `Teste Seguro_transactions.csv` → `Teste Seguro`. */
+function sugerirCarteira(nome: string): string {
+  return nome
+    .replace(/\.[^.]+$/, '')
+    .replace(/[_-]?(transactions|transacoes|extrato|negociacao|export)$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+}
