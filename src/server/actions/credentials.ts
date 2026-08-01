@@ -109,6 +109,16 @@ function traduzir(mensagem: string): string {
   if (texto.includes('email logins are disabled') || texto.includes('email signups are disabled')) {
     return 'Provedor de e-mail desligado no Supabase (Sign In / Providers → Email).'
   }
+  // Só cai aqui se o Supabase TENTOU enviar e-mail — ou seja, "Confirm email"
+  // está ligado. O limite do serviço embutido é baixo e some quando a
+  // confirmação é desligada. Sem dizer isso, a pessoa espera uma hora e o erro
+  // volta igual.
+  if (texto.includes('rate limit')) {
+    return 'Limite de envio de e-mail atingido. Desligue "Confirm email" no Supabase — sem ele nenhum e-mail é enviado e o limite deixa de valer.'
+  }
+  if (texto.includes('invalid') && texto.includes('email')) {
+    return 'O Supabase recusou o endereço interno. Ajuste ANON_EMAIL_DOMAIN para um domínio válido.'
+  }
 
   return mensagem
 }
