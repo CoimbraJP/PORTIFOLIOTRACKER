@@ -12,6 +12,7 @@ export const NAVIGATION: readonly NavItem[] = [
   { href: '/carteiras', label: 'Carteiras / Classes', icon: 'Wallet' },
   { href: '/historico', label: 'Histórico', icon: 'ArrowLeftRight' },
   { href: '/proventos', label: 'Renda passiva', icon: 'Coins' },
+  { href: '/importar', label: 'Importar', icon: 'Upload' },
   { href: '/configuracoes', label: 'Configurações', icon: 'Settings' },
 ]
 

@@ -7,20 +7,13 @@ import { money } from '@/core/money/decimal'
 import { convertMoney } from '@/core/money/display'
 import { assetClass as assetClassConfig } from '@/config/asset-classes'
 import type { AssetClassSlug } from '@/core/types/portfolio'
-import { getDb } from '@/db/client'
 import { withRls } from '@/db/rls'
-import {
-  assetClass,
-  instrument,
-  position,
-  quote,
-  tickerCatalog,
-  transaction,
-  wallet,
-} from '@/db/schema'
+import { assetClass, position, quote, transaction, wallet } from '@/db/schema'
 import { requireTenant } from '@/server/auth/session'
 import { dailySnapshotJob } from '@/server/jobs/daily-snapshot'
+import { findInCatalog } from '@/server/services/catalog-lookup'
 import { recomputePosition } from '@/server/services/recompute-position'
+import { resolvePosition } from '@/server/services/resolve-position'
 import { newPositionSchema } from '@/server/validation/position'
 
 export interface ActionResult {
@@ -68,134 +61,23 @@ export async function createPosition(raw: unknown): Promise<ActionResult> {
     ? null
     : await findInCatalog(slug, input.symbol)
 
-  const isPrivate = definition.privateInstrument || catalogo === null
-
   try {
     await withRls(context.user.id, async (tx) => {
-      // --- classe ---------------------------------------------------------
-      const [classRow] = await tx
-        .select({ id: assetClass.id })
-        .from(assetClass)
-        .where(eq(assetClass.slug, slug))
-        .limit(1)
-
-      if (!classRow) throw new Error(`Classe "${slug}" não existe no banco.`)
-
-      // --- carteira -------------------------------------------------------
-      let walletId = input.walletId
-
-      if (walletId) {
-        // O `walletId` vem do cliente e não pode ser aceito de palavra.
-        //
-        // Duas coisas são verificadas aqui, e nenhuma delas o RLS cobre: uma
-        // chave estrangeira não passa por policy, então um id forjado apontando
-        // para a carteira de outro tenant seria gravado sem reclamação. E a
-        // carteira precisa ser DESTA classe — é o que impede um CDB de acabar
-        // dentro de uma carteira de ações.
-        const [alvo] = await tx
-          .select({ id: wallet.id })
-          .from(wallet)
-          .where(
-            and(
-              eq(wallet.id, walletId),
-              eq(wallet.tenantId, context.tenantId),
-              eq(wallet.assetClassId, classRow.id),
-              isNull(wallet.deletedAt),
-            ),
-          )
-          .limit(1)
-
-        if (!alvo) {
-          throw new Error(
-            `Esta ${definition.walletTerm.one.toLowerCase()} não pertence a ${definition.name}.`,
-          )
-        }
-      }
-
-      if (!walletId) {
-        const name = input.newWalletName?.trim()
-        if (!name) throw new Error(`Informe o nome da ${definition.walletTerm.one.toLowerCase()}.`)
-
-        const [created] = await tx
-          .insert(wallet)
-          .values({
-            tenantId: context.tenantId,
-            assetClassId: classRow.id,
-            name,
-            kind: slug === 'cripto' ? 'SELF_CUSTODY' : 'OTHER',
-          })
-          .returning({ id: wallet.id })
-
-        walletId = created!.id
-      }
-
-      // --- instrumento ----------------------------------------------------
-      const symbol = input.symbol.toUpperCase()
-
-      const [existingInstrument] = await tx
-        .select({ id: instrument.id })
-        .from(instrument)
-        .where(
-          and(
-            eq(instrument.symbol, symbol),
-            isPrivate ? eq(instrument.tenantId, context.tenantId) : eq(instrument.isGlobal, true),
-          ),
-        )
-        .limit(1)
-
-      const instrumentId =
-        existingInstrument?.id ??
-        (
-          await tx
-            .insert(instrument)
-            .values({
-              tenantId: isPrivate ? context.tenantId : null,
-              isGlobal: !isPrivate,
-              symbol,
-              name: input.name?.trim() || catalogo?.name || symbol,
-              kind: definition.instrumentKind,
-              // A moeda vem do catálogo: uma ação da NYSE é cotada em dólar, e
-              // gravar BRL aqui faria a leitura tratar US$ 300 como R$ 300.
-              currency: catalogo?.currency ?? 'BRL',
-              // Logo e ids externos já vieram na sincronização do catálogo.
-              // Descartá-los obrigaria o ativo a esperar a próxima cotação para
-              // ganhar ícone — e, no caso da cripto, a nunca ganhar preço, já
-              // que a CoinGecko é indexada por id e não por ticker.
-              logoUrl: catalogo?.logoUrl ?? null,
-              logoSyncedAt: catalogo?.logoUrl ? new Date() : null,
-              externalIds: catalogo?.externalIds ?? {},
-            })
-            .returning({ id: instrument.id })
-        )[0]!.id
-
-      // --- posição --------------------------------------------------------
       const occurredAt = input.occurredAt ?? new Date().toISOString().slice(0, 10)
 
-      const [existingPosition] = await tx
-        .select({ id: position.id })
-        .from(position)
-        .where(
-          and(
-            eq(position.walletId, walletId),
-            eq(position.instrumentId, instrumentId),
-            isNull(position.deletedAt),
-          ),
-        )
-        .limit(1)
-
-      const positionId =
-        existingPosition?.id ??
-        (
-          await tx
-            .insert(position)
-            .values({
-              tenantId: context.tenantId,
-              walletId,
-              instrumentId,
-              openedAt: occurredAt,
-            })
-            .returning({ id: position.id })
-        )[0]!.id
+      const { positionId, instrumentId } = await resolvePosition(
+        tx,
+        context.tenantId,
+        {
+          classSlug: slug,
+          walletId: input.walletId,
+          walletName: input.newWalletName,
+          symbol: input.symbol,
+          name: input.name,
+          openedAt: occurredAt,
+        },
+        catalogo,
+      )
 
       // --- lançamento -----------------------------------------------------
       //
@@ -265,51 +147,6 @@ export async function createPosition(raw: unknown): Promise<ActionResult> {
   revalidatePath(`/carteiras/${slug}`)
 
   return { ok: true }
-}
-
-interface CatalogMatch {
-  name: string
-  currency: string
-  logoUrl: string | null
-  externalIds: Record<string, string>
-}
-
-/**
- * Procura o símbolo no catálogo daquela classe.
- *
- * Devolve a linha inteira, não um sim/não: o catálogo já traz logo, moeda e os
- * ids externos, e descartá-los para depois buscar tudo de novo seria trabalho
- * repetido. O `external_ids` importa mais do que parece — é por ele que a
- * CoinGecko resolve a moeda certa, e sem ele uma cripto fora da lista embutida
- * ficaria sem cotação para sempre.
- *
- * Fora do `withRls` de propósito: o catálogo é dado de mercado, sem tenant.
- */
-async function findInCatalog(
-  classSlug: AssetClassSlug,
-  symbol: string,
-): Promise<CatalogMatch | null> {
-  const [row] = await getDb()
-    .select({
-      name: tickerCatalog.name,
-      currency: tickerCatalog.currency,
-      logoUrl: tickerCatalog.logoUrl,
-      externalIds: tickerCatalog.externalIds,
-    })
-    .from(tickerCatalog)
-    .where(
-      and(eq(tickerCatalog.classSlug, classSlug), eq(tickerCatalog.symbol, symbol.toUpperCase())),
-    )
-    .limit(1)
-
-  if (!row) return null
-
-  return {
-    name: row.name,
-    currency: row.currency,
-    logoUrl: row.logoUrl,
-    externalIds: (row.externalIds ?? {}) as Record<string, string>,
-  }
 }
 
 /**

@@ -1,0 +1,12 @@
+﻿Data;Classe;Carteira;Codigo;Nome;Operacao;Quantidade;Preco Unitario;Moeda;Dolar na Data;Taxas;Observacao
+15/02/2024;Ações Brasil;XP;PETR4;Petrobras;Compra;900;33,50;BRL;;12,90;aporte mensal
+20/03/2024;Ações Brasil;XP;PETR4;Petrobras;Compra;100;36,20;BRL;;4,50;
+10/06/2024;Ações Brasil;Inter;BBAS3;Banco do Brasil;Compra;500;27,80;BRL;;9,80;
+05/08/2024;FIIs;XP;HGLG11;CSHG Logística;Compra;180;158,40;BRL;;7,20;
+12/09/2024;ETFs;XP;BOVA11;iShares Ibovespa;Compra;60;118,30;BRL;;5,10;
+18/01/2025;Stocks;Avenue;AAPL;Apple;Compra;45;225,00;USD;5,4200;2,00;compra em dolar
+22/01/2025;ETFs Internacionais;Avenue;VOO;Vanguard S&P 500;Compra;12;540,00;USD;5,3900;2,00;
+03/03/2025;Criptomoedas;Binance;BTC;Bitcoin;Compra;0,15;92000,00;USD;5,7500;;
+14/04/2025;Criptomoedas;Ledger;ETH;Ethereum;Compra;2,5;13800,00;BRL;;;autocustodia
+27/05/2025;Ações Brasil;XP;PETR4;Petrobras;Venda;300;41,10;BRL;;11,40;realizacao parcial
+09/07/2025;Renda Fixa;Banco Inter;CDB INTER 118 CDI;CDB Inter 118% CDI;Compra;1;80000,00;BRL;;;vencimento 2027

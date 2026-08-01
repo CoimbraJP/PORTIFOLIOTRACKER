@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   Settings,
   TrendingUp,
+  Upload,
   Users,
   Wallet,
   type LucideIcon,
@@ -44,6 +45,7 @@ const ICONS: Record<string, LucideIcon> = {
   LayoutDashboard,
   Settings,
   TrendingUp,
+  Upload,
   Users,
   Wallet,
 }
