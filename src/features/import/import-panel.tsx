@@ -2,19 +2,21 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, CheckCircle2, FileUp, Upload, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, FileUp, Pencil, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Select } from '@/components/ui/input'
 import { ASSET_CLASSES } from '@/config/asset-classes'
 import { commitImport, previewImport, type PreviewResult } from '@/server/actions/import'
 import type { ImportReport } from '@/server/import/commit'
-import { PreviewTable } from './preview-table'
+import { PreviewTable, type Correcao } from './preview-table'
 
 interface Arquivo {
   nome: string
   csv: string
   wallet: string
+  /** Valores que o usuário corrigiu à mão, por linha da planilha. */
+  correcoes: Record<number, Correcao>
 }
 
 /**
@@ -37,13 +39,27 @@ export function ImportPanel() {
   const [currency, setCurrency] = useState<'BRL' | 'USD'>('BRL')
 
   const [preview, setPreview] = useState<PreviewResult | null>(null)
+  /**
+   * A conferência na tela não corresponde mais ao que seria gravado.
+   *
+   * Marca em vez de apagar: apagar faria a tabela sumir a cada tecla digitada
+   * numa correção. Mas o botão de importar fecha — gravar o que está na tela
+   * depois de o usuário mudar um valor seria gravar o que ele viu, não o que
+   * ele quis.
+   */
+  const [desatualizado, setDesatualizado] = useState(false)
   const [report, setReport] = useState<ImportReport | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   function payload() {
     return {
-      arquivos: arquivos.map((a) => ({ nome: a.nome, csv: a.csv, wallet: a.wallet.trim() })),
+      arquivos: arquivos.map((a) => ({
+        nome: a.nome,
+        csv: a.csv,
+        wallet: a.wallet.trim(),
+        correcoes: a.correcoes,
+      })),
       classSlug,
       currency,
     }
@@ -58,6 +74,7 @@ export function ImportPanel() {
         // CoinMarketCap e a maioria das corretoras exportam, um por conta.
         // Sugestão, não decisão: o campo continua editável.
         wallet: sugerirCarteira(file.name),
+        correcoes: {},
       })),
     )
 
@@ -66,7 +83,7 @@ export function ImportPanel() {
       ...atual,
       ...lidos.filter((novo) => !atual.some((a) => a.nome === novo.nome)),
     ])
-    setPreview(null)
+    setDesatualizado(true)
     setReport(null)
     setErro(null)
     if (inputRef.current) inputRef.current.value = ''
@@ -74,12 +91,21 @@ export function ImportPanel() {
 
   function renomear(nome: string, wallet: string) {
     setArquivos((atual) => atual.map((a) => (a.nome === nome ? { ...a, wallet } : a)))
-    setPreview(null)
+    setDesatualizado(true)
+  }
+
+  function corrigir(arquivo: string, linha: number, correcao: Correcao) {
+    setArquivos((atual) =>
+      atual.map((a) =>
+        a.nome === arquivo ? { ...a, correcoes: { ...a.correcoes, [linha]: correcao } } : a,
+      ),
+    )
+    setDesatualizado(true)
   }
 
   function remover(nome: string) {
     setArquivos((atual) => atual.filter((a) => a.nome !== nome))
-    setPreview(null)
+    setDesatualizado(true)
   }
 
   function conferir() {
@@ -88,8 +114,11 @@ export function ImportPanel() {
 
     startTransition(async () => {
       const resultado = await previewImport(payload())
-      if (resultado.ok) setPreview(resultado)
-      else {
+
+      if (resultado.ok) {
+        setPreview(resultado)
+        setDesatualizado(false)
+      } else {
         setPreview(null)
         setErro(resultado.error ?? 'Não consegui ler os arquivos.')
       }
@@ -105,6 +134,7 @@ export function ImportPanel() {
       if (resultado.ok && resultado.report) {
         setReport(resultado.report)
         setPreview(null)
+        setDesatualizado(false)
         setArquivos([])
         router.refresh()
       } else {
@@ -237,11 +267,27 @@ export function ImportPanel() {
               </p>
             </div>
 
-            <Button onClick={importar} disabled={prontas.length === 0 || pending}>
-              <Upload className="size-4" aria-hidden />
-              {pending ? 'Importando…' : `Importar ${prontas.length}`}
-            </Button>
+            {desatualizado ? (
+              <Button onClick={conferir} disabled={pending}>
+                {pending ? 'Lendo…' : 'Conferir de novo'}
+              </Button>
+            ) : (
+              <Button onClick={importar} disabled={prontas.length === 0 || pending}>
+                <Upload className="size-4" aria-hidden />
+                {pending ? 'Importando…' : `Importar ${prontas.length}`}
+              </Button>
+            )}
           </div>
+
+          {desatualizado ? (
+            <div className="mt-4 flex items-start gap-3 rounded-lg border border-accent/25 bg-accent/[0.06] px-4 py-3">
+              <Pencil className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
+              <p className="text-[0.8125rem] leading-relaxed text-fg">
+                Você mudou alguma coisa. A tabela abaixo ainda mostra a leitura anterior — confira de
+                novo para ver o resultado das correções antes de importar.
+              </p>
+            </div>
+          ) : null}
 
           {preview.fx ? <AvisoCambio fx={preview.fx} /> : null}
 
@@ -274,7 +320,11 @@ export function ImportPanel() {
                       </ul>
                     ) : null}
 
-                    <PreviewTable rows={arquivo.rows} />
+                    <PreviewTable
+                      rows={arquivo.rows}
+                      correcoes={arquivos.find((a) => a.nome === arquivo.nome)?.correcoes ?? {}}
+                      onCorrigir={(linha, correcao) => corrigir(arquivo.nome, linha, correcao)}
+                    />
                   </>
                 )}
               </section>

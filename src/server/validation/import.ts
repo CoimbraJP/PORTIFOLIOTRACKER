@@ -18,6 +18,23 @@ export const arquivoSchema = z.object({
    * misturaria a Binance com a Ledger.
    */
   wallet: z.string().trim().max(80, 'Nome de carteira muito longo.').optional(),
+  /**
+   * Valores corrigidos à mão na conferência, por número de linha da planilha.
+   *
+   * Vem como TEXTO e é convertido no servidor, pelo mesmo caminho de sempre.
+   * Aceitar o número já pronto do navegador seria abrir justamente a porta que
+   * o resto da importação fecha: o servidor não teria como saber se "2341" é
+   * dois mil e trezentos ou dois vírgula três.
+   */
+  correcoes: z
+    .record(
+      z.string().regex(/^\d+$/),
+      z.object({
+        unitPrice: z.string().trim().max(40).optional(),
+        quantity: z.string().trim().max(40).optional(),
+      }),
+    )
+    .optional(),
 })
 
 /**

@@ -54,6 +54,41 @@ export function detectNumberFormat(cells: Iterable<string>): NumberFormat {
 }
 
 /**
+ * Número digitado à mão, sem contexto de arquivo para desempatar.
+ *
+ * A correção que o usuário digita na tela não pertence a nenhuma planilha: ele
+ * pode escrever `2341,69` ou `2341.69`, e as duas querem dizer a mesma coisa.
+ * Como não há arquivo para votar, a decisão sai da própria grafia:
+ *
+ * - dois separadores: o último é o decimal (`146.750.446,05`);
+ * - um separador com exatamente três dígitos depois: é milhar (`1.500`);
+ * - qualquer outro caso: é decimal (`2341.69`, `0,15`).
+ *
+ * A segunda regra é a única ambígua — quem quis dizer "um e meio" escrevendo
+ * `1,500` vai ler mil e quinhentos na conferência e corrigir. O contrário
+ * (tratar milhar como decimal) some silenciosamente numa casa decimal.
+ */
+export function parseDigitado(bruto: string): string | null {
+  const texto = bruto.trim()
+  if (texto === '') return null
+
+  const temPonto = texto.includes('.')
+  const temVirgula = texto.includes(',')
+
+  if (temPonto && temVirgula) {
+    return parseNumber(texto, texto.lastIndexOf('.') > texto.lastIndexOf(',') ? 'us' : 'br')
+  }
+
+  if (/^\d{1,3}([.,]\d{3})+$/.test(texto)) {
+    return parseNumber(texto, temVirgula ? 'us' : 'br')
+  }
+
+  // Um separador só, e não é milhar: é a vírgula decimal, escrita de um jeito
+  // ou de outro.
+  return parseNumber(texto.replace(',', '.'), 'us')
+}
+
+/**
  * Converte a célula em número de máquina, ou devolve nulo.
  *
  * Nulo é resposta legítima e frequente: exportadores escrevem `--`, `n/a` ou

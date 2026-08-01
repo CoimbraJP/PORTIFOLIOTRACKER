@@ -111,7 +111,7 @@ export async function gravarImportacao(
         ...valoresDe(row),
         source: 'IMPORT',
         idempotencyKey: chave,
-        notes: row.aviso ?? null,
+        notes: anotacao(row),
       })
 
       // Marca a chave como vista: duas linhas idênticas dentro do MESMO arquivo
@@ -127,6 +127,26 @@ export async function gravarImportacao(
   })
 
   return relatorio
+}
+
+/**
+ * O que fica escrito no lançamento sobre a origem dele.
+ *
+ * Correção à mão vira nota permanente com o valor ANTIGO. Daqui a um ano, "por
+ * que este preço não bate com o extrato?" precisa ter resposta, e a resposta
+ * não pode morar só na tela que já fechou.
+ */
+function anotacao(row: ImportedRow): string | null {
+  const partes: string[] = []
+
+  for (const c of row.corrigido ?? []) {
+    const nome = c.campo === 'unitPrice' ? 'Preço' : 'Quantidade'
+    partes.push(`${nome} corrigido na importação (arquivo dizia "${c.de}")`)
+  }
+
+  if (row.aviso) partes.push(row.aviso)
+
+  return partes.length > 0 ? partes.join('. ') : null
 }
 
 /**

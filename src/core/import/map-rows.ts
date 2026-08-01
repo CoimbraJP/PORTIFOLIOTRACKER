@@ -1,5 +1,5 @@
 import { normalizar } from './normalize'
-import { detectNumberFormat, parseNumber, type NumberFormat } from './parse-number'
+import { detectNumberFormat, parseDigitado, parseNumber, type NumberFormat } from './parse-number'
 
 /** Os campos que um lançamento importado precisa ter. */
 export type ImportField =
@@ -58,6 +58,13 @@ export interface ImportedRow {
    * teriam a mesma chave e a segunda seria descartada como duplicata.
    */
   ocorrencia: number
+  /**
+   * O que o usuário corrigiu à mão nesta linha, e o que estava escrito antes.
+   *
+   * Guardado para virar anotação no lançamento: daqui a um ano, "por que este
+   * preço não bate com o extrato?" precisa ter resposta.
+   */
+  corrigido?: { campo: 'unitPrice' | 'quantity'; de: string }[]
   /** Por que esta linha não pode entrar. Vazio quando está boa. */
   erro?: string
   /**
@@ -81,6 +88,16 @@ export interface ImportDefaults {
   currency?: 'BRL' | 'USD'
   /** Câmbio por data, quando conhecido. Chave `YYYY-MM-DD`. */
   rates?: Record<string, string>
+  /**
+   * Valores que o usuário corrigiu na conferência, por número de linha da
+   * planilha.
+   *
+   * Existe porque exportador erra e o arquivo não é editável por quem importa.
+   * A correção substitui a célula ANTES de qualquer validação — ela passa pelas
+   * mesmas regras de número, de sinal e de ordem de grandeza que o resto. Não é
+   * um atalho para furar a checagem; é trocar o que estava escrito.
+   */
+  correcoes?: Record<number, { unitPrice?: string; quantity?: string }>
 }
 
 
@@ -183,21 +200,40 @@ export function mapRows(
     if (!side) return falha(`Não sei se é compra ou venda: "${pegar(linha, 'side')}"`)
     base.side = side
 
-    const quantity = parseNumber(pegar(linha, 'quantity'), formato)
+    // A correção do usuário substitui a célula ANTES de validar: ela passa
+    // pelas mesmas regras que o valor original, inclusive o aviso de ordem de
+    // grandeza. Corrigir não é furar a checagem, é trocar o que estava escrito.
+    const correcao = defaults.correcoes?.[base.linha]
+    const corrigido: NonNullable<ImportedRow['corrigido']> = []
+
+    const celula = (campo: 'unitPrice' | 'quantity') => {
+      const original = pegar(linha, campo)
+      const novo = correcao?.[campo]?.trim()
+      if (!novo) return parseNumber(original, formato)
+
+      const convertido = parseDigitado(novo)
+      if (convertido === null) return null
+
+      corrigido.push({ campo, de: original })
+      return convertido
+    }
+
+    const quantity = celula('quantity')
     if (!quantity || Number(quantity) <= 0) {
-      return falha(`Quantidade inválida: "${pegar(linha, 'quantity')}"`)
+      return falha(`Quantidade inválida: "${correcao?.quantity ?? pegar(linha, 'quantity')}"`)
     }
 
     // Preço ZERO é aceito de propósito. Airdrop, bonificação e desdobramento
     // entram sem custo, e recusá-los faria a quantidade sumir da carteira —
     // o ativo existe, foi só de graça.
-    const unitPrice = parseNumber(pegar(linha, 'unitPrice'), formato)
+    const unitPrice = celula('unitPrice')
     if (unitPrice === null || Number(unitPrice) < 0) {
-      return falha(`Preço inválido: "${pegar(linha, 'unitPrice')}"`)
+      return falha(`Preço inválido: "${correcao?.unitPrice ?? pegar(linha, 'unitPrice')}"`)
     }
 
     base.quantity = quantity
     base.unitPrice = unitPrice
+    if (corrigido.length > 0) base.corrigido = corrigido
     // Taxa ausente vem como "--" em vários exportadores. Ausente é zero.
     base.fees = parseNumber(pegar(linha, 'fees'), formato) ?? '0'
 

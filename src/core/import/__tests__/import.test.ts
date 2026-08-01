@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseCsv } from '../parse-csv'
 import { diagnosticar, guessMapping } from '../guess-mapping'
-import { detectNumberFormat, parseNumber } from '../parse-number'
+import { detectNumberFormat, parseDigitado, parseNumber } from '../parse-number'
 import { importKey, mapRows } from '../map-rows'
 import { ordenarParaLedger } from '../order-rows'
 
@@ -299,6 +299,68 @@ describe('dados que passam em toda validação e ainda estão errados', () => {
     expect(rows[3]?.aviso).toContain('acima do resto do arquivo')
     // Sinaliza, não bloqueia: quem sabe se o aporte foi grande é o dono.
     expect(rows[3]?.erro).toBeUndefined()
+  })
+})
+
+describe('correção à mão na conferência', () => {
+  const mapa = { date: 0, side: 1, symbol: 2, quantity: 3, unitPrice: 4 }
+  const padrao = { classSlug: 'cripto', wallet: 'Ledger' }
+
+  const arquivo = [
+    ['01/03/2024', 'buy', 'ETH', '1', '3000'],
+    ['02/03/2024', 'buy', 'ETH', '1', '3100'],
+    ['03/03/2024', 'buy', 'ETH', '1', '2900'],
+    ['04/03/2024', 'buy', 'ETH', '5,5', '146750446,05'],
+    ['05/03/2024', 'buy', 'ETH', '1', '3050'],
+  ]
+
+  it('substitui o valor e apaga o aviso quando o novo faz sentido', () => {
+    const rows = mapRows(arquivo, mapa, classes, {
+      ...padrao,
+      correcoes: { 5: { unitPrice: '2341,69' } },
+    })
+
+    expect(rows[3]?.unitPrice).toBe('2341.69')
+    expect(rows[3]?.aviso).toBeUndefined()
+    expect(rows[3]?.erro).toBeUndefined()
+  })
+
+  it('guarda o que o arquivo dizia antes', () => {
+    // Vira anotação permanente no lançamento. Daqui a um ano, "por que este
+    // preço não bate com o extrato?" precisa ter resposta.
+    const rows = mapRows(arquivo, mapa, classes, {
+      ...padrao,
+      correcoes: { 5: { unitPrice: '2341,69' } },
+    })
+
+    expect(rows[3]?.corrigido).toEqual([{ campo: 'unitPrice', de: '146750446,05' }])
+  })
+
+  it('não deixa a correção furar a checagem', () => {
+    // Corrigir é trocar o que estava escrito, não pular a validação: um valor
+    // absurdo continua absurdo depois de digitado à mão.
+    const rows = mapRows(arquivo, mapa, classes, {
+      ...padrao,
+      correcoes: { 5: { unitPrice: '999999999' } },
+    })
+
+    expect(rows[3]?.aviso).toContain('acima do resto do arquivo')
+  })
+
+  it('recusa o que não é número em vez de virar zero', () => {
+    const rows = mapRows(arquivo, mapa, classes, { ...padrao, correcoes: { 5: { unitPrice: 'abc' } } })
+
+    expect(rows[3]?.erro).toContain('Preço inválido')
+  })
+
+  it('entende o número digitado nas duas convenções', () => {
+    // A correção não pertence a arquivo nenhum: ele pode escrever `2341,69` ou
+    // `2341.69`, e lidas ao contrário uma delas viraria 234.169.
+    expect(parseDigitado('2341,69')).toBe('2341.69')
+    expect(parseDigitado('2341.69')).toBe('2341.69')
+    expect(parseDigitado('146.750.446,05')).toBe('146750446.05')
+    expect(parseDigitado('1,234.56')).toBe('1234.56')
+    expect(parseDigitado('abc')).toBeNull()
   })
 })
 

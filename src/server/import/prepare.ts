@@ -67,7 +67,13 @@ export async function prepararImportacao(input: ImportInput): Promise<Prepared> 
       parseCsv(arquivo.csv).rows,
       prep.mapping,
       classes,
-      { classSlug: slug, wallet: arquivo.wallet, currency: input.currency, rates: cambio.rates },
+      {
+        classSlug: slug,
+        wallet: arquivo.wallet,
+        currency: input.currency,
+        rates: cambio.rates,
+        correcoes: numerarLinhas(arquivo.correcoes),
+      },
       formato,
     )
 
@@ -111,7 +117,7 @@ function lerArquivo(
     tabela.rows,
     mapping,
     buildClassLookup(),
-    { classSlug: slug, wallet: arquivo.wallet, currency },
+    { classSlug: slug, wallet: arquivo.wallet, currency, correcoes: numerarLinhas(arquivo.correcoes) },
     formato,
   )
 
@@ -128,6 +134,21 @@ function lerArquivo(
   }
 
   return { arquivo, prep: { ...base, rows }, precisaCambio: temUsd, formato }
+}
+
+/**
+ * O JSON traz a linha como texto; o motor trabalha com número.
+ *
+ * Conversão explícita, e não `as`: chave de objeto em JavaScript é sempre
+ * string, e `Record<number, T>` é uma ficção do TypeScript que não sobrevive à
+ * serialização.
+ */
+function numerarLinhas(
+  correcoes: ArquivoInput['correcoes'],
+): Record<number, { unitPrice?: string; quantity?: string }> | undefined {
+  if (!correcoes) return undefined
+
+  return Object.fromEntries(Object.entries(correcoes).map(([linha, v]) => [Number(linha), v]))
 }
 
 /**
