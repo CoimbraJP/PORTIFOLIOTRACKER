@@ -6,7 +6,8 @@ import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Input } from '@/components/ui/input'
-import { wipeTenantData, WIPE_PHRASE } from '@/server/actions/danger'
+import { wipeTenantData } from '@/server/actions/danger'
+import { WIPE_PHRASE } from '@/server/validation/danger'
 
 /**
  * Zona de perigo.

@@ -11,14 +11,12 @@ import {
   wallet,
 } from '@/db/schema'
 import { requireTenant } from '@/server/auth/session'
+import { WIPE_PHRASE } from '@/server/validation/danger'
 
 export interface WipeResult {
   ok: boolean
   error?: string
 }
-
-/** O que o usuário precisa digitar. Confirmação que não se clica por engano. */
-export const WIPE_PHRASE = 'APAGAR TUDO'
 
 /**
  * Apaga todo o patrimônio do tenant.
