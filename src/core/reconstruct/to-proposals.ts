@@ -32,6 +32,16 @@ export interface Proposal {
    * não têm preço, e um campo preenchido ali convidaria a inventar custo.
    */
   unitPrice: string
+  /**
+   * O preço de fechamento do ano, sempre presente — mesmo quando `unitPrice`
+   * está vazio.
+   *
+   * É a rede de segurança de quem TROCA o tipo na tela: se um desdobramento
+   * mal classificado vira compra, o campo de preço não pode nascer em branco
+   * pedindo para o usuário adivinhar um número. `referencePrice` é de onde
+   * `proposal-row.tsx` puxa o valor ao mudar o tipo.
+   */
+  referencePrice: string
   /** `YYYY-MM-DD`. Nasce em 31/12 do ano, que é a data do preço. */
   date: string
   ratio?: string
@@ -77,6 +87,7 @@ export function toProposals(movements: readonly Movement[]): Proposal[] {
       ...(m.fromSymbol ? { fromSymbol: m.fromSymbol } : {}),
       quantity: m.quantity,
       unitPrice: SEM_PRECO.has(type) ? '' : m.referencePrice,
+      referencePrice: m.referencePrice,
       date: `${m.year}-12-31`,
       ...(m.ratio ? { ratio: m.ratio } : {}),
       motivo: m.motivo,

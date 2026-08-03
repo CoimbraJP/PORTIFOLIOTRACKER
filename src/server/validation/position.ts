@@ -40,6 +40,11 @@ export const newPositionSchema = z.object({
   unitCost: decimalString,
   /** Valor unitário atual. Ausente = usa o custo, e o lucro nasce zero. */
   unitValue: decimalString.optional(),
+  /**
+   * Taxa de juros do contrato — só empréstimo e renda fixa usam.
+   * Vai para `custom_fields`; `readAccrualFields` projeta o valor a partir dela.
+   */
+  rate: decimalString.optional(),
   occurredAt: z
     .string()
     .trim()

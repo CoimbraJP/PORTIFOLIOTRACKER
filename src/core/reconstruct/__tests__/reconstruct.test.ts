@@ -62,11 +62,29 @@ describe('evento societário x negócio', () => {
   /** O primeiro ano só apresenta a carteira; o movimento é sempre no segundo. */
   const segundoAno = (fotos: YearSnapshot[]) => diffYears(fotos).find((m) => m.year === 2021)
 
-  it('lê fator redondo como desdobramento, não como compra', () => {
-    const m = segundoAno(anos([2020, [item('WEGE3', '100')]], [2021, [item('WEGE3', '200')]]))
+  it('lê fator redondo como desdobramento quando o preço confirma', () => {
+    // Um desdobramento 1:2 de verdade divide o preço pela metade — é assim que
+    // a B3 registra o evento no dia em que ele acontece.
+    const m = segundoAno(
+      anos([2020, [item('WEGE3', '100', '', '50')]], [2021, [item('WEGE3', '200', '', '25')]]),
+    )
 
     expect(m?.kind).toBe('DESDOBRAMENTO')
     expect(m?.confirmar).toBe(true)
+  })
+
+  it('não lê fator redondo como desdobramento quando o preço não confirma', () => {
+    // Caso real que corrompeu uma carteira: 100 ações viraram 300 — um "1:3"
+    // tão redondo quanto um desdobramento — mas o preço não caiu, ele SUBIU.
+    // Foi uma compra comum, e nada aqui distinguia os dois antes desta
+    // checagem: um desdobramento mal detectado zera o preço e destrói o custo
+    // médio real da posição.
+    const m = segundoAno(
+      anos([2020, [item('BBAS3', '100', '', '30')]], [2021, [item('BBAS3', '300', '', '32')]]),
+    )
+
+    expect(m?.kind).toBe('AUMENTO')
+    expect(m?.confirmar).toBe(false)
   })
 
   it('lê aumento pequeno como bonificação, mesmo em quantidade redonda', () => {

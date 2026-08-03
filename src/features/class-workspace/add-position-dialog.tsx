@@ -46,6 +46,7 @@ export function AddPositionDialog({
   const [quantity, setQuantity] = useState('')
   const [unitCost, setUnitCost] = useState('')
   const [unitValue, setUnitValue] = useState('')
+  const [rate, setRate] = useState('')
   const [entryCurrency, setEntryCurrency] = useState<'BRL' | 'USD'>('BRL')
   const [entryRate, setEntryRate] = useState(workspace.usdBrl ?? '')
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -72,6 +73,10 @@ export function AddPositionDialog({
   const creatingWallet = walletId === NEW_WALLET || workspace.walletOptions.length === 0
   const emDolar = workspace.foreignEntry && entryCurrency === 'USD'
   const prefixo = emDolar ? 'US$' : 'R$'
+  // Só empréstimo e renda fixa rendem juros contratados — as demais classes
+  // sem cotação (imóvel, empresa…) não têm taxa nenhuma para pedir.
+  const showRate = workspace.slug === 'emprestimos' || workspace.slug === 'renda-fixa'
+  const rateLabel = workspace.slug === 'emprestimos' ? 'Taxa de juros (a.m.)' : 'Taxa (a.a.)'
 
   function reset() {
     setSymbol('')
@@ -80,6 +85,7 @@ export function AddPositionDialog({
     setQuantity('')
     setUnitCost('')
     setUnitValue('')
+    setRate('')
     setNewWalletName('')
     setStep('form')
     setUnknownTicker(false)
@@ -129,6 +135,7 @@ export function AddPositionDialog({
       quantity: isQuantitative ? quantity : '1',
       unitCost,
       unitValue: unitValue.trim() ? unitValue : undefined,
+      rate: showRate && rate.trim() ? rate : undefined,
       entryCurrency: emDolar ? 'USD' : 'BRL',
       entryRate: emDolar ? entryRate : undefined,
     })
@@ -314,6 +321,18 @@ export function AddPositionDialog({
               placeholder="0,00"
             />
           </Field>
+
+          {showRate ? (
+            <Field label={rateLabel} hint="Projeta o valor por juros compostos">
+              <Input
+                inputMode="decimal"
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+                onBlur={(e) => setRate(formatDecimalInput(e.target.value))}
+                placeholder="1,00"
+              />
+            </Field>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-line pt-5">

@@ -167,7 +167,7 @@ function compararAno(
     const para = money(item.quantity)
     if (de.equals(para)) continue
 
-    movimentos.push(mudancaDeQuantidade(year, item, de, para))
+    movimentos.push(mudancaDeQuantidade(year, item, de, para, money(antes.closingPrice)))
   }
 
   return movimentos
@@ -179,12 +179,22 @@ function compararAno(
  * A ordem das perguntas importa: fator redondo de desdobramento vem antes de
  * "aumento pequeno é bonificação", senão um desdobramento 1:2 viraria uma
  * compra do mesmo tamanho da posição.
+ *
+ * Mas fator redondo sozinho não basta — uma carteira real provou isso. Quem
+ * tinha 100 ações e comprou mais 200 no ano termina com 300, um "1:3" tão
+ * redondo quanto um desdobramento de verdade, e nada aqui distinguia os dois:
+ * toda compra que por coincidência triplicasse, quintuplicasse ou dobrasse a
+ * posição virava desdobramento, zerava o preço e destruía o custo médio. É
+ * por isso que `confirmaPeloPreco` entra: um desdobramento MEXE no preço, na
+ * mesma proporção e no sentido oposto; uma compra não mexe. Preço confirma
+ * quantidade, não só o inverso.
  */
 function mudancaDeQuantidade(
   year: number,
   item: SnapshotItem,
   de: Money,
   para: Money,
+  precoAnterior: Money,
 ): Movement {
   const fator = divide(para, de)
   const base = {
@@ -195,7 +205,7 @@ function mudancaDeQuantidade(
   }
 
   const redondo = fatorRedondo(fator)
-  if (redondo) {
+  if (redondo && confirmaPeloPreco(precoAnterior, money(item.closingPrice), fator)) {
     const cresceu = para.greaterThan(de)
     return {
       ...base,
@@ -357,6 +367,34 @@ function parPorQuantidade(
   }
 
   return null
+}
+
+/**
+ * Confere se o PREÇO bate com o desdobramento, não só a quantidade.
+ *
+ * Um desdobramento de verdade nasce dividindo o preço pelo mesmo fator que
+ * multiplica a quantidade — é assim que a B3 registra o evento no dia em que
+ * ele acontece. Uma compra comum não faz o preço do papel cair: quem comprou
+ * mais PETR4 não fez a PETR4 ficar mais barata.
+ *
+ * A tolerância é larga (60%) de propósito: o preço que temos é o de 31/12,
+ * meses depois do evento, e o mercado se move nesse intervalo — um
+ * desdobramento real raramente bate o fator com exatidão. Mas o erro que este
+ * teste existe para pegar não é uma variação de mercado, é um fator errado
+ * por uma ORDEM DE GRANDEZA inteira (3x, 5x, 10x) — e esse erro nenhuma
+ * variação normal de preço em um ano imita por acidente.
+ *
+ * Sem preço num dos dois lados (raro — papel suspenso, por exemplo), não há
+ * como confirmar nem desmentir: o fator redondo continua valendo sozinho, e a
+ * linha já nasce marcada para conferência humana.
+ */
+function confirmaPeloPreco(precoAntes: Money, precoDepois: Money, fator: Money): boolean {
+  if (precoAntes.lessThanOrEqualTo(0) || precoDepois.lessThanOrEqualTo(0)) return true
+
+  const esperado = divide(precoAntes, fator)
+  const desvio = precoDepois.minus(esperado).abs().dividedBy(esperado)
+
+  return desvio.lessThanOrEqualTo(money('0.6'))
 }
 
 /**

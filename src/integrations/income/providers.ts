@@ -124,7 +124,16 @@ export class BrapiIncomeProvider implements IncomeProvider {
       try {
         events.push(...(await this.buscarAcoes(acoes, since, atendidos)))
       } catch (error) {
-        falhas.push(`ações: ${mensagem(error)}`)
+        // Mesma lógica do bloco de FIIs abaixo: a BRAPI passou a exigir plano
+        // pago para dividendo de AÇÃO também, não só de fundo. A mensagem crua
+        // ("FEATURE_NOT_AVAILABLE") lida sozinha parece bug de configuração;
+        // dizer que é restrição de plano poupa o usuário de procurar defeito
+        // onde não tem.
+        falhas.push(
+          semPermissao(error)
+            ? 'dividendos de ações exigem plano pago na BRAPI — o plano atual só cobre cotação'
+            : `ações: ${mensagem(error)}`,
+        )
       }
     }
 
@@ -266,6 +275,10 @@ export class TwelveDataIncomeProvider implements IncomeProvider {
     const events: IncomeEvent[] = []
     const atendidos = new Set<string>()
     const falhas: string[] = []
+    // Plano sem acesso a `/dividends` rejeita TODO símbolo com o mesmo 403.
+    // Sem isto, uma carteira com vinte stocks americanas vira vinte linhas
+    // idênticas na tela — a mesma restrição contada vinte vezes.
+    let semAcessoAoPlano = false
 
     for (const instrument of instruments) {
       const simbolo = instrument.externalIds.twelvedata ?? instrument.symbol
@@ -302,10 +315,18 @@ export class TwelveDataIncomeProvider implements IncomeProvider {
           })
         }
       } catch (error) {
-        falhas.push(`${instrument.symbol}: ${mensagem(error)}`)
+        if (semPermissao(error)) {
+          semAcessoAoPlano = true
+        } else {
+          falhas.push(`${instrument.symbol}: ${mensagem(error)}`)
+        }
       }
 
       await sleep(150)
+    }
+
+    if (semAcessoAoPlano) {
+      falhas.unshift('dividendos de ações internacionais exigem plano pago na Twelve Data')
     }
 
     return {

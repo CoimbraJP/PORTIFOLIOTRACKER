@@ -4,6 +4,7 @@ import { and, desc, eq, gt, isNull } from 'drizzle-orm'
 import { money, type Money } from '@/core/money/decimal'
 import { convertMoney, type DisplaySettings } from '@/core/money/display'
 import type { CurrencyCode } from '@/core/money/format'
+import { estimateAccrued, readAccrualFields } from '@/core/valuation/accrual'
 import type { AssetClassSlug, Position, ValuationMode } from '@/core/types/portfolio'
 import { withRls } from '@/db/rls'
 import {
@@ -62,6 +63,7 @@ export async function loadPositions(
         walletKind: wallet.kind,
         classSlug: assetClass.slug,
         valuationMode: assetClass.valuationMode,
+        customFields: position.customFields,
       })
       .from(position)
       .innerJoin(instrument, eq(position.instrumentId, instrument.id))
@@ -178,8 +180,13 @@ export async function loadPositions(
         mode,
         quantity,
         avgPrice,
+        totalCost: money(row.totalCost),
         quotePrice: priceByInstrument.get(row.instrumentId),
         valuationValue: valueByPosition.get(row.positionId),
+        accrual:
+          mode === 'ACCRUAL'
+            ? readAccrualFields((row.customFields as Record<string, unknown>) ?? {})
+            : null,
         onMissing: () => missingQuotes.push(row.symbol),
       })
 
@@ -250,11 +257,14 @@ function resolvePrice(input: {
   mode: ValuationMode
   quantity: Money
   avgPrice: Money
+  totalCost: Money
   quotePrice: string | undefined
   valuationValue: string | undefined
+  /** Taxa e data do contrato, só para ACCRUAL. `null` quando não há juros a projetar. */
+  accrual: { rate: Money; period: 'MONTHLY' | 'YEARLY'; startDate: Date } | null
   onMissing: () => void
 }): Money {
-  const { mode, quantity, avgPrice, quotePrice, valuationValue, onMissing } = input
+  const { mode, quantity, avgPrice, totalCost, quotePrice, valuationValue, accrual, onMissing } = input
 
   if (mode === 'QUANTITATIVE') {
     if (quotePrice) return money(quotePrice)
@@ -265,8 +275,20 @@ function resolvePrice(input: {
   // VALUATED e ACCRUAL: a avaliação é do BEM inteiro, não unitária. Como a
   // quantidade é 1 nesses casos, dividir devolve o valor cheio — e continua
   // correto se algum dia houver fração.
+  //
+  // Reavaliação manual VENCE a projeção por juros: é uma opinião mais nova
+  // que o usuário digitou de propósito (ex.: amortização parcial), e recalcular
+  // por cima dela inventaria rendimento sobre um valor que já mudou.
   if (valuationValue) {
     const total = money(valuationValue)
+    return quantity.isZero() ? total : total.dividedBy(quantity)
+  }
+
+  // ACCRUAL sem reavaliação: projeta pela taxa contratada em vez de ficar
+  // preso ao custo (lucro zero) até alguém digitar um saldo à mão. Sobre o
+  // TOTAL investido, não sobre o preço médio — é o principal que rende.
+  if (mode === 'ACCRUAL' && accrual) {
+    const total = estimateAccrued({ principal: totalCost, ...accrual })
     return quantity.isZero() ? total : total.dividedBy(quantity)
   }
 

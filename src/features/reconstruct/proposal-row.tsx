@@ -4,8 +4,6 @@ import { AlertTriangle } from 'lucide-react'
 import type { Proposal } from '@/core/reconstruct/to-proposals'
 import { cn } from '@/lib/cn'
 
-const QUANTIDADE = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 8 })
-
 const ROTULO: Record<Proposal['type'], string> = {
   BUY: 'Compra',
   SELL: 'Venda',
@@ -53,10 +51,22 @@ export function ProposalRow({
           {proposta.fromSymbol ? (
             <span className="ml-2 font-normal text-fg-subtle">← {proposta.fromSymbol}</span>
           ) : null}
-          <span className="ml-2 font-normal text-fg-subtle">
-            {QUANTIDADE.format(Number(proposta.quantity))}
-          </span>
         </p>
+
+        {/* Quantidade editável: o relatório deduz pela diferença entre dois
+            anos, e a corretora sabe o número exato de cada negócio — quem
+            conferir contra o extrato precisa poder corrigir aqui, não só o
+            preço. */}
+        <label className="mt-1 flex items-center gap-1.5 text-caption normal-case tracking-normal text-fg-subtle">
+          Quantidade
+          <input
+            value={proposta.quantity}
+            onChange={(e) => onMudar({ quantity: e.target.value })}
+            inputMode="decimal"
+            aria-label={`Quantidade de ${proposta.symbol}`}
+            className="numeric h-6 w-24 rounded border border-line bg-surface px-1.5 text-right text-[0.8125rem] text-fg transition-colors duration-[180ms] hover:border-line-strong focus:border-accent/60 focus:outline-none"
+          />
+        </label>
 
         <p
           className={cn(
@@ -75,7 +85,19 @@ export function ProposalRow({
         {trocavel ? (
           <select
             value={proposta.type}
-            onChange={(e) => onMudar({ type: e.target.value as Proposal['type'] })}
+            onChange={(e) => {
+              const type = e.target.value as Proposal['type']
+
+              // Sair de um tipo sem preço para um com preço não pode deixar o
+              // campo em branco: quem corrige um desdobramento mal detectado
+              // para compra precisa de um número para conferir, não de um
+              // convite a inventar um.
+              const precisaDePreco = !SEM_PRECO.has(type) && !proposta.unitPrice
+              onMudar({
+                type,
+                ...(precisaDePreco ? { unitPrice: proposta.referencePrice } : {}),
+              })
+            }}
             aria-label={`Tipo do lançamento de ${proposta.symbol}`}
             className="h-8 rounded-md border border-line bg-surface px-2 text-sm text-fg transition-colors duration-[180ms] hover:border-line-strong focus:border-accent/60 focus:outline-none"
           >

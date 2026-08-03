@@ -8,7 +8,7 @@ import { convertMoney } from '@/core/money/display'
 import { assetClass as assetClassConfig } from '@/config/asset-classes'
 import type { AssetClassSlug } from '@/core/types/portfolio'
 import { withRls } from '@/db/rls'
-import { assetClass, position, quote, transaction, wallet } from '@/db/schema'
+import { assetClass, position, transaction, valuation, wallet } from '@/db/schema'
 import { requireTenant } from '@/server/auth/session'
 import { dailySnapshotJob } from '@/server/jobs/daily-snapshot'
 import { findInCatalog } from '@/server/services/catalog-lookup'
@@ -65,7 +65,7 @@ export async function createPosition(raw: unknown): Promise<ActionResult> {
     await withRls(context.user.id, async (tx) => {
       const occurredAt = input.occurredAt ?? new Date().toISOString().slice(0, 10)
 
-      const { positionId, instrumentId } = await resolvePosition(
+      const { positionId } = await resolvePosition(
         tx,
         context.tenantId,
         {
@@ -116,23 +116,53 @@ export async function createPosition(raw: unknown): Promise<ActionResult> {
         idempotencyKey: `manual:${randomUUID()}`,
       })
 
-      // --- cotação informada ----------------------------------------------
+      // --- valor informado -------------------------------------------------
       //
-      // O usuário disse quanto vale hoje. Vira cotação manual, que a próxima
-      // sincronização sobrescreve quando um provider real assumir o
-      // instrumento.
+      // O usuário disse quanto vale hoje. Para onde isso é gravado depende do
+      // que a classe É:
       //
-      // Diferente do custo, esta é gravada na MOEDA DIGITADA. Cotação é preço
-      // de mercado, e o mercado cota a Apple em dólar — converter aqui
-      // congelaria o câmbio de hoje num dado que a leitura já sabe converter.
-      if (input.unitValue) {
-        await tx.insert(quote).values({
-          instrumentId,
-          price: money(input.unitValue).toFixed(10),
+      // QUANTITATIVE (ação, cripto…) tem cotação de MERCADO, que é dado
+      // GLOBAL — a mesma linha serve a todo mundo que tem PETR4. Escrever ali
+      // é papel do job de sincronização, com service role (ver `withRls` e
+      // `withServiceRole` em `db/rls.ts`): esta transação roda como o papel
+      // `authenticated`, para o qual a tabela `quote` não tem policy de
+      // escrita nenhuma — de propósito, para que uma requisição de usuário
+      // nunca escreva no acervo global. Um valor digitado aqui não entra;
+      // a sincronização automática assume assim que o instrumento for
+      // reconhecido, e até lá a posição usa o próprio custo (lucro zero).
+      //
+      // VALUATED e ACCRUAL (imóvel, empresa, empréstimo…) não têm mercado —
+      // o valor é uma OPINIÃO do tenant sobre o próprio bem, e é exatamente
+      // isso que a tabela `valuation` modela. É tenant-scoped, então a
+      // escrita é permitida, e é a mesma tabela que "Novo saldo" usa depois
+      // de criado (`server/actions/transaction.ts`).
+      if (input.unitValue && definition.valuationMode !== 'QUANTITATIVE') {
+        await tx.insert(valuation).values({
+          tenantId: context.tenantId,
+          positionId,
+          valuedAt: occurredAt,
+          value: money(input.unitValue).toFixed(10),
           currency: input.entryCurrency,
-          asOf: new Date(),
-          provider: 'manual',
+          method: 'MANUAL',
         })
+      }
+
+      // --- taxa de juros do contrato ----------------------------------------
+      //
+      // Só empréstimo e renda fixa têm taxa. Fica em `custom_fields`, de onde
+      // `readAccrualFields` lê para projetar o valor por juros compostos
+      // sempre que ainda não houver uma reavaliação manual mais recente.
+      if (definition.valuationMode === 'ACCRUAL' && input.rate) {
+        await tx
+          .update(position)
+          .set({
+            customFields: {
+              rate: input.rate,
+              startDate: occurredAt,
+              ratePeriod: slug === 'emprestimos' ? 'MONTHLY' : 'YEARLY',
+            },
+          })
+          .where(eq(position.id, positionId))
       }
 
       await recomputePosition(tx, positionId)
