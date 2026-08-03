@@ -15,6 +15,8 @@ export interface FilePreview {
   moedaDoArquivo?: 'BRL' | 'USD'
   /** Por que este arquivo inteiro ficou de fora. */
   bloqueio?: string
+  /** `POSICAO`: arquivo certo, tela errada — a UI oferece a reconstrução. */
+  bloqueioTipo?: 'POSICAO' | 'FALTAM_COLUNAS'
   /** Como cada campo foi encontrado, para o usuário conferir antes de gravar. */
   reconhecido?: { campo: string; coluna: string }[]
   rows: ImportedRow[]
@@ -74,6 +76,7 @@ export async function previewImport(raw: unknown): Promise<PreviewResult> {
         nome: prep.nome,
         ...(prep.moedaDoArquivo ? { moedaDoArquivo: prep.moedaDoArquivo } : {}),
         bloqueio: prep.bloqueio,
+        ...(prep.bloqueioTipo ? { bloqueioTipo: prep.bloqueioTipo } : {}),
         reconhecido: Object.entries(prep.mapping).map(([campo, indice]) => ({
           campo: ROTULOS[campo] ?? campo,
           coluna: prep.headers[indice] ?? '',

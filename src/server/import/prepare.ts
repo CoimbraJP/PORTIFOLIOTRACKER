@@ -32,6 +32,11 @@ export interface PreparedFile {
   delimiter: string
   /** Impedimento deste arquivo. Quando vem preenchido, ele inteiro fica de fora. */
   bloqueio?: string
+  /**
+   * `POSICAO` quer dizer "arquivo certo, tela errada": ele serve para
+   * reconstruir histórico, e a tela oferece o caminho em vez de só recusar.
+   */
+  bloqueioTipo?: 'POSICAO' | 'FALTAM_COLUNAS'
 }
 
 export interface Prepared {
@@ -154,7 +159,12 @@ function lerArquivo(
 
   const impedimento = diagnosticar(tabela.headers, mapping)
   if (impedimento) {
-    return { arquivo, prep: { ...base, bloqueio: impedimento }, precisaCambio: false, formato }
+    return {
+      arquivo,
+      prep: { ...base, bloqueio: impedimento.motivo, bloqueioTipo: impedimento.tipo },
+      precisaCambio: false,
+      formato,
+    }
   }
 
   const rows = mapRows(

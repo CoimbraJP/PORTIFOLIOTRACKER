@@ -107,6 +107,20 @@ export function detectHeaderCurrency(headers: string[]): 'BRL' | 'USD' | null {
 }
 
 /**
+ * Por que este arquivo não serve para importar NEGÓCIOS.
+ *
+ * O tipo vem junto com o texto porque quem chama precisa reagir diferente: um
+ * extrato de POSIÇÃO não é um arquivo defeituoso, é o arquivo certo na tela
+ * errada — ele serve, e serve bem, para reconstruir histórico. Dizer só
+ * "exporte outra coisa" manda a pessoa procurar um arquivo que ela talvez não
+ * tenha, tendo em mãos um que o sistema sabe usar.
+ */
+export interface Diagnostico {
+  tipo: 'POSICAO' | 'FALTAM_COLUNAS'
+  motivo: string
+}
+
+/**
  * Diz o que impede este arquivo de ser importado — antes de tentar linha a linha.
  *
  * Um extrato de POSIÇÃO da B3 devolve quinze vezes "Data inválida", o que é
@@ -115,7 +129,7 @@ export function detectHeaderCurrency(headers: string[]): 'BRL' | 'USD' | null {
  * não tem data de compra nem preço pago, e nenhum ajuste de mapeamento
  * inventaria isso.
  */
-export function diagnosticar(headers: string[], mapa: ColumnMap): string | null {
+export function diagnosticar(headers: string[], mapa: ColumnMap): Diagnostico | null {
   const faltando = OBRIGATORIOS.filter((campo) => mapa[campo] === undefined)
   if (faltando.length === 0) return null
 
@@ -124,12 +138,13 @@ export function diagnosticar(headers: string[], mapa: ColumnMap): string | null 
   const pareceSaldo = dePosicao.filter((c) => normalizados.includes(c)).length >= 2
 
   if (pareceSaldo) {
-    return (
-      'Este arquivo é um extrato de POSIÇÃO: ele mostra o que você tem hoje, ' +
-      'não os negócios que fez. Falta a data e o preço de compra de cada ' +
-      'operação, e o preço de fechamento não serve — ele é de hoje, não do dia ' +
-      'em que você comprou. Exporte o extrato de NEGOCIAÇÃO.'
-    )
+    return {
+      tipo: 'POSICAO',
+      motivo:
+        'Este arquivo é um extrato de POSIÇÃO: ele mostra o que você tinha numa ' +
+        'data, não os negócios que fez. Não dá para importar como compra e venda ' +
+        '— mas dá para reconstruir o histórico a partir dele.',
+    }
   }
 
   const nomes: Record<string, string> = {
@@ -139,7 +154,10 @@ export function diagnosticar(headers: string[], mapa: ColumnMap): string | null 
     unitPrice: 'preço unitário',
   }
 
-  return `Não encontrei no arquivo: ${faltando.map((c) => nomes[c] ?? c).join(', ')}.`
+  return {
+    tipo: 'FALTAM_COLUNAS',
+    motivo: `Não encontrei no arquivo: ${faltando.map((c) => nomes[c] ?? c).join(', ')}.`,
+  }
 }
 
 /**

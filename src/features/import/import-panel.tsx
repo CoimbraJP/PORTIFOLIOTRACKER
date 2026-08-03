@@ -2,7 +2,8 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, CheckCircle2, FileUp, Pencil, Upload, X } from 'lucide-react'
+import Link from 'next/link'
+import { AlertTriangle, CalendarClock, CheckCircle2, FileUp, Pencil, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Field, Select } from '@/components/ui/input'
@@ -311,9 +312,24 @@ export function ImportPanel() {
                 </div>
 
                 {arquivo.bloqueio ? (
-                  <div className="mt-3 flex items-start gap-3 rounded-lg border border-negative/25 bg-negative/[0.06] px-4 py-3">
-                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-negative" aria-hidden />
-                    <p className="text-[0.8125rem] leading-relaxed text-fg">{arquivo.bloqueio}</p>
+                  <div className="mt-3 flex items-start gap-3 rounded-lg border border-warning/25 bg-warning/[0.06] px-4 py-3">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                    <div className="text-[0.8125rem] leading-relaxed text-fg">
+                      <p>{arquivo.bloqueio}</p>
+
+                      {/* Arquivo certo, tela errada. Recusar sem apontar o
+                          caminho manda a pessoa procurar um extrato que ela
+                          talvez não tenha, tendo em mãos um que serve. */}
+                      {arquivo.bloqueioTipo === 'POSICAO' ? (
+                        <Link
+                          href="/importar/anual"
+                          className="mt-2 inline-flex items-center gap-2 rounded-md border border-accent/30 bg-accent/10 px-3 py-1.5 text-accent transition-colors duration-[180ms] hover:border-accent/60 hover:bg-accent/20"
+                        >
+                          <CalendarClock className="size-4" aria-hidden />
+                          Reconstruir pelo relatório anual
+                        </Link>
+                      ) : null}
+                    </div>
                   </div>
                 ) : (
                   <>

@@ -164,8 +164,11 @@ describe('extrato de posição da B3', () => {
   it('explica que o arquivo é de saldo em vez de reclamar de cada linha', () => {
     const aviso = diagnosticar(headers, guessMapping(headers))
 
-    expect(aviso).toContain('POSIÇÃO')
-    expect(aviso).toContain('NEGOCIAÇÃO')
+    expect(aviso?.tipo).toBe('POSICAO')
+    expect(aviso?.motivo).toContain('POSIÇÃO')
+    // O tipo existe para a tela oferecer a reconstrução em vez de só recusar:
+    // é o arquivo certo na tela errada, não um arquivo defeituoso.
+    expect(aviso?.motivo).toContain('reconstruir')
   })
 
   it('deixa passar o extrato de negociação, que é o certo', () => {
