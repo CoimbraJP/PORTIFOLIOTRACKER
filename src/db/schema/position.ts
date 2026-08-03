@@ -46,6 +46,8 @@ export const position = pgTable(
     quantity: numeric('quantity', { precision: 28, scale: 10 }).notNull().default('0'),
     avgPrice: numeric('avg_price', { precision: 28, scale: 10 }).notNull().default('0'),
     totalCost: numeric('total_cost', { precision: 28, scale: 10 }).notNull().default('0'),
+    /** Tudo que já foi comprado. Não diminui na venda — ver `PositionState`. */
+    totalInvested: numeric('total_invested', { precision: 28, scale: 10 }).notNull().default('0'),
     realizedPnl: numeric('realized_pnl', { precision: 28, scale: 10 }).notNull().default('0'),
     incomeTotal: numeric('income_total', { precision: 28, scale: 10 }).notNull().default('0'),
     recomputedAt: timestamp('recomputed_at', { withTimezone: true }),

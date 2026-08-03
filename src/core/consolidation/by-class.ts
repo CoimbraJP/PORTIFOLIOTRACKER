@@ -26,6 +26,7 @@ export function consolidateByClass(
   for (const [slug, items] of groups) {
     const currentValue = sum(items.map((p) => p.currentValue))
     const totalCost = sum(items.map((p) => p.totalCost))
+    const totalInvested = sum(items.map((p) => p.totalInvested))
     const incomeTotal = sum(items.map((p) => p.incomeTotal))
     const profit = currentValue.minus(totalCost).plus(incomeTotal)
 
@@ -35,6 +36,7 @@ export function consolidateByClass(
       positionsCount: items.length,
       currentValue,
       totalCost,
+      totalInvested,
       incomeTotal,
       profit,
       changePct: percentOf(profit, totalCost),

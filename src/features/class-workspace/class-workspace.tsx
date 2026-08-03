@@ -313,6 +313,17 @@ export function ClassWorkspace({ initial }: { initial: ClassWorkspaceView }) {
                 <p className="sensitive numeric mt-3 text-[1.375rem] font-semibold tracking-[-0.02em] text-fg">
                   {scope.summary.totalCost.text}
                 </p>
+
+                {/* Só aparece depois de existir uma venda. Enquanto os dois
+                    números são iguais, repetir o mesmo valor com dois nomes
+                    ensina o usuário a desconfiar da tela. */}
+                {scope.summary.totalInvested.raw > 0 &&
+                scope.summary.totalInvested.text !== scope.summary.totalCost.text ? (
+                  <p className="sensitive mt-1.5 text-caption normal-case tracking-normal text-fg-subtle">
+                    <span className="numeric">{scope.summary.totalInvested.text}</span> aportados no
+                    total, contando o que já foi vendido
+                  </p>
+                ) : null}
                 <p className="mt-1.5 text-caption normal-case tracking-normal text-fg-subtle">
                   {scope.summary.positionsCount}{' '}
                   {scope.summary.positionsCount === 1

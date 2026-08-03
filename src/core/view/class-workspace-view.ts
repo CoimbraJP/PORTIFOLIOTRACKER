@@ -32,6 +32,14 @@ export interface PerformerView {
 export interface ScopeSummary {
   currentValue: MoneyView
   totalCost: MoneyView
+  /**
+   * Tudo que já foi aportado, sem descontar vendas.
+   *
+   * Só aparece na tela quando difere do custo — enquanto ninguém vendeu nada,
+   * os dois são o mesmo número, e mostrar duas vezes o mesmo valor com nomes
+   * diferentes ensina o usuário a desconfiar da tela.
+   */
+  totalInvested: MoneyView
   income: MoneyView
   profit: MoneyView
   change: ChangeView
@@ -51,6 +59,7 @@ export interface WalletDetailView {
   positionsCount: number
   currentValue: MoneyView
   totalCost: MoneyView
+  totalInvested: MoneyView
   income: MoneyView
   profit: MoneyView
   change: ChangeView

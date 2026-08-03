@@ -38,7 +38,26 @@ export type InstrumentKind = 'STOCK' | 'FII' | 'ETF' | 'CRYPTO' | 'FIXED_INCOME'
 export interface PositionState {
   quantity: Money
   avgPrice: Money
+  /**
+   * Custo do que AINDA se tem.
+   *
+   * Vender tira custo junto: quem comprou 100 e vendeu 40 carrega o custo de
+   * 60. É contra este número que o lucro não realizado é medido, e é ele que a
+   * Receita quer no dia da venda seguinte.
+   */
   totalCost: Money
+  /**
+   * Tudo que já foi comprado, somado. NUNCA diminui.
+   *
+   * Responde outra pergunta: "quanto dinheiro meu já entrou aqui na vida".
+   * Vender não devolve nada a este número, e é por isso que ele não serve para
+   * medir lucro da posição atual — serve para conferir com a corretora, que
+   * costuma chamar isto de "base de custo" e somar tudo desde sempre.
+   *
+   * Transferência entre carteiras próprias fica de fora de propósito: mudar
+   * o ativo de lugar não é dinheiro novo saindo do bolso.
+   */
+  totalInvested: Money
   realizedPnl: Money
   incomeTotal: Money
 }
@@ -69,6 +88,8 @@ export interface ClassSummary {
   positionsCount: number
   currentValue: Money
   totalCost: Money
+  /** Tudo que já foi aportado nesta classe. Ver `PositionState`. */
+  totalInvested: Money
   incomeTotal: Money
   /** currentValue − totalCost + incomeTotal */
   profit: Money
@@ -86,6 +107,8 @@ export interface WalletSummary {
   positionsCount: number
   currentValue: Money
   totalCost: Money
+  /** Tudo que já foi aportado nesta carteira. Ver `PositionState`. */
+  totalInvested: Money
   profit: Money
   changePct: Money
   share: Money

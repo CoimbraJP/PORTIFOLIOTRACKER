@@ -11,11 +11,13 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
+    "db:push": "drizzle-kit push && npm run db:policies",
     "db:studio": "drizzle-kit studio",
     "db:policies": "tsx src/db/apply-policies.ts",
     "db:seed": "tsx src/db/seed/index.ts",
-    "db:setup": "npm run db:push && npm run db:policies && npm run db:seed"
+    "db:setup": "npm run db:push && npm run db:seed",
+    "db:push:only": "drizzle-kit push",
+    "db:recompute": "tsx src/db/recompute.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

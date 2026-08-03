@@ -19,6 +19,18 @@ export interface SyncReport {
   skipped: string[]
 }
 
+export interface SyncOptions {
+  /**
+   * Limita a quais classes cotar.
+   *
+   * Existe porque os provedores têm limites bem diferentes: a CoinGecko aceita
+   * ser chamada à vontade, a BRAPI e a Twelve Data cortam rápido no plano
+   * gratuito. Cotar só cripto deixa o usuário atualizar o que muda o dia
+   * inteiro sem gastar a cota do que fecha às 18h.
+   */
+  classes?: AssetClassSlug[]
+}
+
 /**
  * Atualiza as cotações de tudo que está em carteira.
  *
@@ -30,8 +42,9 @@ export interface SyncReport {
  * Só busca instrumento que alguém realmente possui. É isso que faz o custo de
  * API crescer com o número de ativos distintos, não de usuários.
  */
-export async function syncQuotesJob(): Promise<SyncReport> {
+export async function syncQuotesJob(options: SyncOptions = {}): Promise<SyncReport> {
   const db = getDb()
+  const filtro = options.classes ? new Set<string>(options.classes) : null
 
   const rows = await db
     .selectDistinct({
@@ -59,7 +72,7 @@ export async function syncQuotesJob(): Promise<SyncReport> {
 
   // Imóvel e empréstimo não têm cotação de mercado. Mandá-los aos providers
   // gastaria requisição para receber "não encontrado".
-  const quotable = refs.filter(isQuotable)
+  const quotable = refs.filter((r) => isQuotable(r) && (!filtro || filtro.has(r.classSlug)))
 
   if (quotable.length === 0) {
     return { instruments: 0, updated: 0, logos: 0, unresolved: [], errors: [], skipped: [] }

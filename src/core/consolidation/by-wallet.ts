@@ -31,6 +31,7 @@ export function consolidateByWallet(
 
     const currentValue = sum(items.map((p) => p.currentValue))
     const totalCost = sum(items.map((p) => p.totalCost))
+    const totalInvested = sum(items.map((p) => p.totalInvested))
     const income = sum(items.map((p) => p.incomeTotal))
     const profit = currentValue.minus(totalCost).plus(income)
 
@@ -42,6 +43,7 @@ export function consolidateByWallet(
       positionsCount: items.length,
       currentValue,
       totalCost,
+      totalInvested,
       profit,
       changePct: percentOf(profit, totalCost),
       share: share(currentValue, totalValue),

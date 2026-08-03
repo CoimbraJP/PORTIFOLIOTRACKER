@@ -9,6 +9,7 @@ import { dailySnapshotJob } from '@/server/jobs/daily-snapshot'
 import { syncCatalogJob } from '@/server/jobs/sync-catalog'
 import { syncIncomeJob } from '@/server/jobs/sync-income'
 import { syncFxJob, syncQuotesJob } from '@/server/jobs/sync-quotes'
+import type { AssetClassSlug } from '@/core/types/portfolio'
 
 export interface SyncNowResult {
   ok: boolean
@@ -30,11 +31,32 @@ export interface SyncNowResult {
  * quem chama é uma pessoa logada, e a garantia vem da sessão.
  */
 export async function syncNow(): Promise<SyncNowResult> {
+  return cotar()
+}
+
+/**
+ * Cota SÓ as criptomoedas.
+ *
+ * A CoinGecko não cobra cota como a BRAPI e a Twelve Data, e cripto negocia
+ * fim de semana e madrugada. Separar os dois botões deixa atualizar o que muda
+ * o tempo todo sem queimar o limite do que fecha às 18h.
+ *
+ * O câmbio fica de fora junto: a cotação de cripto já chega em real, e cada
+ * chamada de câmbio evitada é uma a menos numa API que já estourou a cota uma
+ * vez.
+ */
+export async function syncCryptoNow(): Promise<SyncNowResult> {
+  return cotar({ classes: ['cripto'], comCambio: false })
+}
+
+async function cotar(
+  opcoes: { classes?: AssetClassSlug[]; comCambio?: boolean } = {},
+): Promise<SyncNowResult> {
   await requireTenant()
 
   try {
-    const quotes = await syncQuotesJob()
-    const fx = await syncFxJob()
+    const quotes = await syncQuotesJob(opcoes.classes ? { classes: opcoes.classes } : {})
+    const fx = opcoes.comCambio === false ? { error: undefined } : await syncFxJob()
 
     const warnings = [
       ...quotes.errors.map((e) => `${e.provider}: ${e.message}`),

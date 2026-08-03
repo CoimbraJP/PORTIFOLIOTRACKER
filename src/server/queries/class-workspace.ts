@@ -233,6 +233,7 @@ function buildScope(options: {
 
   const currentValue = sum(positions.map((p) => p.currentValue))
   const totalCost = sum(positions.map((p) => p.totalCost))
+  const totalInvested = sum(positions.map((p) => p.totalInvested))
   const income = sum(positions.map((p) => p.incomeTotal))
   const profit = currentValue.minus(totalCost).plus(income)
   const scopeShare = share(currentValue, shareBase)
@@ -275,6 +276,7 @@ function buildScope(options: {
     summary: {
       currentValue: toMoneyView(toDisplay(currentValue), currency),
       totalCost: toMoneyView(toDisplay(totalCost), currency),
+      totalInvested: toMoneyView(toDisplay(totalInvested), currency),
       income: toMoneyView(toDisplay(income), currency),
       profit: toMoneyView(toDisplay(profit), currency),
       change: view.change,
@@ -313,6 +315,7 @@ function buildWalletDetails(
 
     const value = sum(items.map((p) => p.currentValue))
     const cost = sum(items.map((p) => p.totalCost))
+    const aportado = sum(items.map((p) => p.totalInvested))
     const income = sum(items.map((p) => p.incomeTotal))
     const profit = value.minus(cost).plus(income)
     const walletShare = share(value, base)
@@ -324,6 +327,7 @@ function buildWalletDetails(
       positionsCount: items.length,
       currentValue: toMoneyView(toDisplay(value), currency),
       totalCost: toMoneyView(toDisplay(cost), currency),
+      totalInvested: toMoneyView(toDisplay(aportado), currency),
       income: toMoneyView(toDisplay(income), currency),
       profit: toMoneyView(toDisplay(profit), currency),
       change: toChangeView(percentOf(profit, cost)),

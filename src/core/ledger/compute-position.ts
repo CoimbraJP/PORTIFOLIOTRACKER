@@ -34,13 +34,33 @@ import { INCOME_TYPES, type LedgerEntry } from './types'
 export function computePosition(entries: readonly LedgerEntry[]): PositionState {
   const ordered = [...entries].sort((a, b) => {
     const diff = a.occurredAt.getTime() - b.occurredAt.getTime()
-    // Empate no mesmo instante: ordem estável pelo id, para que o resultado
-    // não dependa da ordem em que o banco devolveu as linhas.
-    return diff !== 0 ? diff : a.id.localeCompare(b.id)
+    if (diff !== 0) return diff
+
+    // Mesmo instante: ENTRADA antes de saída.
+    //
+    // O ledger trabalha por dia — todo lançamento é carimbado ao meio-dia —,
+    // então comprar e vender o mesmo ativo no mesmo dia produz empate aqui. Só
+    // uma das duas ordens descreve um fato possível: não se vende o que ainda
+    // não se tem, e a venda que chega antes da compra é descartada por falta de
+    // estoque. Sobra a compra, e a carteira exibe um ativo que a pessoa já não
+    // tem, valendo dinheiro.
+    //
+    // O desempate era só pelo `id`, que é um UUID. Determinístico, sim — o
+    // mesmo dado dava sempre o mesmo resultado —, mas sorteado: reimportar os
+    // mesmos negócios gerava ids novos e o patrimônio mudava sem nada ter
+    // mudado no mundo.
+    const saida = (e: LedgerEntry) => (e.type === 'SELL' || e.type === 'TRANSFER_OUT' ? 1 : 0)
+    const porTipo = saida(a) - saida(b)
+    if (porTipo !== 0) return porTipo
+
+    // Empate real: ordem estável pelo id, para o mesmo ledger reconstruir
+    // sempre igual.
+    return a.id.localeCompare(b.id)
   })
 
   let quantity = money(0)
   let totalCost = money(0)
+  let totalInvested = money(0)
   let realizedPnl = money(0)
   let incomeTotal = money(0)
 
@@ -49,6 +69,8 @@ export function computePosition(entries: readonly LedgerEntry[]): PositionState 
       case 'BUY': {
         quantity = quantity.plus(entry.quantity)
         totalCost = totalCost.plus(entry.quantity.times(entry.unitPrice)).plus(entry.fees)
+        // Nunca diminui, nem na venda. Ver `totalInvested` em `PositionState`.
+        totalInvested = totalInvested.plus(entry.quantity.times(entry.unitPrice)).plus(entry.fees)
         break
       }
 
@@ -128,6 +150,7 @@ export function computePosition(entries: readonly LedgerEntry[]): PositionState 
     quantity,
     avgPrice: divide(totalCost, quantity),
     totalCost,
+    totalInvested,
     realizedPnl,
     incomeTotal,
   }

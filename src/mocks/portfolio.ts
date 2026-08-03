@@ -119,6 +119,7 @@ export function buildMockPositions(): Position[] {
       quantity,
       avgPrice,
       totalCost: quantity.times(avgPrice),
+      totalInvested: quantity.times(avgPrice),
       currentPrice,
       currentValue: quantity.times(currentPrice),
       realizedPnl: money(raw.realized ?? 0),

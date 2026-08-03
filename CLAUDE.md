@@ -52,6 +52,16 @@ parte do patrimônio. O lado devedor nunca é modelado.
    `relrowsecurity = false`, combinação que nenhuma mão humana produz. Foi assim
    que o isolamento caiu em produção sem ninguém perceber.
 
+   **`db:push` DERRUBA as policies, sempre.** Elas vivem em SQL puro
+   (`db/apply-policies.ts`) e o Drizzle não sabe que existem: toda execução
+   emite `DROP POLICY` em todas e não recria nenhuma. O resultado é pior que
+   RLS desligado — a tabela fica com RLS ligado e forçado e ZERO policies, o
+   que barra tudo em vez de barrar o que deve.
+
+   Por isso `db:push` encadeia `db:policies` no `package.json`. Rodar
+   `drizzle-kit push` direto, ou o `db:push:only`, exige rodar as policies
+   depois. Não existe motivo legítimo para deixar o banco entre os dois passos.
+
    Os testes em `tests/tenant-isolation.test.ts` são o alarme disso. Se eles
    ficarem vermelhos, nada mais importa até voltarem ao verde.
 

@@ -104,7 +104,15 @@ export function WalletSection({
                   </div>
 
                   <div className="flex items-center gap-8">
-                    <Metric label="Investido" value={wallet.totalCost.text} muted />
+                    {/* "Custo" e não "Investido": este número desce quando há
+                        venda, e quem compara com a corretora precisa saber que
+                        não é o total aportado. O aportado fica ao lado quando
+                        os dois divergem. */}
+                    <Metric label="Custo" value={wallet.totalCost.text} muted />
+                    {wallet.totalInvested.raw > 0 &&
+                    wallet.totalInvested.text !== wallet.totalCost.text ? (
+                      <Metric label="Aportado" value={wallet.totalInvested.text} muted />
+                    ) : null}
                     <Metric label="Valor atual" value={wallet.currentValue.text} />
                     <div className="text-right">
                       <p className="text-caption uppercase text-fg-subtle">Lucro</p>

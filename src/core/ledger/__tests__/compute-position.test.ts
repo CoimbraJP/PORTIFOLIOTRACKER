@@ -172,26 +172,24 @@ describe('computePosition', () => {
   })
 })
 
-describe('a ordem das entradas é carga estrutural', () => {
-  // Este par de testes existe para deixar explícito o que `recomputePosition`
-  // está protegendo. O motor consome a lista NA ORDEM em que ela chega: quem
-  // monta a lista é responsável por ela estar certa.
+describe('compra e venda no mesmo dia', () => {
+  // Caso real, vindo de uma carteira de cripto: as duas pernas do mesmo negócio
+  // saíram com o mesmo carimbo de hora. O ledger trabalha por dia, então elas
+  // empatam — e só uma das ordens descreve um fato possível.
   const compra = () => entry('BUY', '2026-05-21', { quantity: '207', unitPrice: '20' })
   const venda = () => entry('SELL', '2026-05-21', { quantity: '207', unitPrice: '57.48' })
 
-  it('compra antes de venda zera a posição, que é o fato', () => {
+  it('zera a posição, venha na ordem que vier', () => {
     expect(computePosition([compra(), venda()]).quantity.toString()).toBe('0')
+    expect(computePosition([venda(), compra()]).quantity.toString()).toBe('0')
   })
 
-  it('venda antes de compra inventa a posição inteira', () => {
-    // A venda não encontra estoque e é descartada; sobra a compra. O resultado
-    // é um ativo que a pessoa não tem mais, valendo dinheiro na tela.
-    //
-    // Os dois lançamentos são do MESMO dia e, no banco, do mesmo instante — o
-    // ledger carimba tudo ao meio-dia. Sem desempate explícito na consulta, o
-    // Postgres devolve empate em ordem arbitrária e o patrimônio muda de um
-    // recálculo para o outro. Ver a cláusula `order by` de `recomputePosition`.
-    expect(computePosition([venda(), compra()]).quantity.toString()).toBe('207')
+  it('registra o lucro realizado dos dois jeitos', () => {
+    // 207 × (57,48 − 20) = 7.758,36 — o mesmo que a corretora mostra.
+    const esperado = '7758.36'
+
+    expect(computePosition([compra(), venda()]).realizedPnl.toString()).toBe(esperado)
+    expect(computePosition([venda(), compra()]).realizedPnl.toString()).toBe(esperado)
   })
 })
 
@@ -210,5 +208,51 @@ describe('quantityAt — a pergunta da data-com', () => {
 
   it('devolve zero antes do primeiro lançamento', () => {
     expect(quantityAt(entries, new Date('2023-12-31T00:00:00Z')).isZero()).toBe(true)
+  })
+})
+
+describe('total aportado', () => {
+  it('não diminui quando se vende', () => {
+    // O custo cai — vender tira o custo da parte vendida —, mas o dinheiro que
+    // já saiu do bolso continua tendo saído. É este número que a corretora
+    // costuma chamar de "base de custo".
+    const state = computePosition([
+      entry('BUY', '2024-01-10', { quantity: '100', unitPrice: '30' }),
+      entry('SELL', '2024-06-10', { quantity: '40', unitPrice: '45' }),
+    ])
+
+    expect(state.totalCost.toString()).toBe('1800')
+    expect(state.totalInvested.toString()).toBe('3000')
+  })
+
+  it('soma as taxas, porque elas saíram do bolso também', () => {
+    const state = computePosition([
+      entry('BUY', '2024-01-10', { quantity: '10', unitPrice: '100', fees: '12.90' }),
+    ])
+
+    expect(state.totalInvested.toString()).toBe('1012.9')
+  })
+
+  it('vender tudo zera o custo mas não o aportado', () => {
+    // A posição some das telas de patrimônio; o histórico de quanto passou por
+    // ela não some junto.
+    const state = computePosition([
+      entry('BUY', '2024-01-10', { quantity: '50', unitPrice: '20' }),
+      entry('SELL', '2024-02-10', { quantity: '50', unitPrice: '25' }),
+    ])
+
+    expect(state.totalCost.toString()).toBe('0')
+    expect(state.totalInvested.toString()).toBe('1000')
+  })
+
+  it('bonificação não é aporte', () => {
+    // Ação bonificada chega de graça: aumenta a quantidade e não o que se pagou.
+    const state = computePosition([
+      entry('BUY', '2024-01-10', { quantity: '1000', unitPrice: '10' }),
+      entry('BONUS', '2024-12-10', { quantity: '50' }),
+    ])
+
+    expect(state.quantity.toString()).toBe('1050')
+    expect(state.totalInvested.toString()).toBe('10000')
   })
 })
