@@ -14,6 +14,7 @@ import {
   type LerAnualResult,
 } from '@/server/actions/reconstruct'
 import type { ReconstructReport } from '@/server/reconstruct/commit'
+import { readTextFile } from '@/lib/read-text-file'
 import { ProposalRow } from './proposal-row'
 
 interface Arquivo {
@@ -55,7 +56,7 @@ export function ReconstructPanel() {
 
   async function aoEscolher(lista: FileList) {
     const lidos = await Promise.all(
-      [...lista].map(async (file) => ({ nome: file.name, csv: await file.text() })),
+      [...lista].map(async (file) => ({ nome: file.name, csv: await readTextFile(file) })),
     )
 
     setArquivos((atual) => [
@@ -118,9 +119,13 @@ export function ReconstructPanel() {
       <Card>
         <h2 className="text-[0.9375rem] font-semibold text-fg">1. Suba os relatórios anuais</h2>
         <p className="mt-1 text-[0.8125rem] leading-relaxed text-fg-subtle">
-          Na Área do Investidor da B3: Relatórios → Relatório Consolidado → período Anual → Excel,
-          e salve cada aba como CSV. Suba um ano por vez ou todos de uma vez — o ano é lido do nome
-          do arquivo.
+          Na Área do Investidor da B3: Relatórios → Relatório Consolidado → período Anual → Excel.
+          Suba um ano por vez ou todos de uma vez — o ano é lido do nome do arquivo.
+        </p>
+        <p className="mt-2 text-[0.8125rem] leading-relaxed text-warning">
+          Ao salvar como CSV, o Excel grava <strong>só a aba aberta</strong>. O relatório tem uma
+          aba para Ações, outra para Fundos e outra para BDR — salve cada uma num arquivo, senão
+          seus FIIs somem sem aviso. Confira a contagem por ano no passo 2.
         </p>
         <p className="mt-2 text-caption normal-case leading-relaxed tracking-normal text-fg-subtle">
           Se você tiver o extrato de <strong className="text-fg">Negociação</strong>, use ele em vez

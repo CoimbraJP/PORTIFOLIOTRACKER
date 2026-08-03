@@ -9,6 +9,7 @@ import { Field, Select } from '@/components/ui/input'
 import { ASSET_CLASSES } from '@/config/asset-classes'
 import { commitImport, previewImport, type PreviewResult } from '@/server/actions/import'
 import type { ImportReport } from '@/server/import/commit'
+import { readTextFile } from '@/lib/read-text-file'
 import { PreviewTable, type Correcao } from './preview-table'
 
 interface Arquivo {
@@ -69,7 +70,7 @@ export function ImportPanel() {
     const lidos = await Promise.all(
       [...lista].map(async (file) => ({
         nome: file.name,
-        csv: await file.text(),
+        csv: await readTextFile(file),
         // O nome do arquivo costuma ser o nome da carteira — é assim que o
         // CoinMarketCap e a maioria das corretoras exportam, um por conta.
         // Sugestão, não decisão: o campo continua editável.
