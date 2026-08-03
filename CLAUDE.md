@@ -130,6 +130,32 @@ parte do patrimônio. O lado devedor nunca é modelado.
 
 ## 4. Como trabalhar neste projeto
 
+### Entrega
+
+Toda entrega termina com UM bloco pronto para colar, nesta ordem:
+
+```
+npm test
+npm run build
+
+git add .
+git commit -m "V1 - short description in English"
+git push
+```
+
+O teste e o build vêm ANTES do commit, e não por formalidade: o `tsc` não vê
+erro de `'use server'`, e foi assim que um deploy quebrou. Se qualquer um dos
+dois falhar, o commit não acontece.
+
+`db:push` ou `db:recompute` entram no bloco quando a entrega mexe em schema ou
+em coluna derivada — antes dos testes, porque os testes leem o banco.
+
+Versão sobe a cada entrega: `V1`, `V2`, `V3`. Descrição em inglês, curta, no
+imperativo. A versão é do produto, não do arquivo — uma entrega com dez
+arquivos é um número só.
+
+### Ritmo
+
 - **Uma fase por vez.** Não avançar antes dos critérios de pronto da fase atual.
 - Todo PR que toca `core/` exige teste.
 - Se a mesma lógica aparece duas vezes, ela pertence ao domínio, não à tela.

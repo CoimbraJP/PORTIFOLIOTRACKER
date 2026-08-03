@@ -1,4 +1,5 @@
-import { Download } from 'lucide-react'
+import Link from 'next/link'
+import { CalendarClock, Download } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { Card } from '@/components/ui/card'
 import { ImportPanel } from '@/features/import/import-panel'
@@ -41,6 +42,22 @@ export default async function ImportarPage() {
               <Download className="size-4 text-fg-subtle" aria-hidden />
               Instruções
             </a>
+          </div>
+
+          <div className="mt-6 border-t border-line pt-5">
+            <p className="text-label uppercase text-fg-subtle">Não tem o histórico?</p>
+            <p className="mt-2 text-[0.8125rem] leading-relaxed text-fg-subtle">
+              Dá para reconstruir uma base aproximada a partir dos relatórios anuais da B3,
+              comparando as posições de 31/12 de cada ano. É dedução, não fato — cada linha vem com
+              o motivo e você confere antes de gravar.
+            </p>
+            <Link
+              href="/importar/anual"
+              className="mt-3 inline-flex items-center gap-2 rounded-md border border-line bg-elevated px-4 py-2.5 text-sm text-fg transition-colors duration-[180ms] hover:border-line-strong"
+            >
+              <CalendarClock className="size-4 text-fg-subtle" aria-hidden />
+              Reconstruir pelo relatório anual
+            </Link>
           </div>
 
           <div className="mt-6 border-t border-line pt-5">
