@@ -87,6 +87,21 @@ parte do patrimônio. O lado devedor nunca é modelado.
 11. **Feature desligada é feature invisível.** Flags em `config/features.ts`.
     Modelo e cálculo podem existir; a interface não aparece pela metade.
 
+12. **Ticker não identifica ativo — id de provedor identifica.** Existe mais de
+    uma moeda chamada FLUID, ONDO ou SOL. Quando o catálogo escolhe uma pelo
+    símbolo, quem tem a outra recebe um preço REAL, de um ativo REAL, que não é
+    o dele: nada estoura, o número é plausível, e só quem conhece a moeda
+    percebe.
+
+    Por isso todo instrumento cotado guarda o id da fonte em `external_ids`, e
+    todo caminho que resolve ticker → ativo precisa de uma saída para o usuário
+    corrigir a escolha. Correção FORKA o instrumento para privado do tenant: o
+    global é compartilhado, e reapontá-lo mudaria a carteira de estranhos.
+
+    O mesmo vale para qualquer fonte externa: se a chave que usamos pode
+    corresponder a mais de uma coisa no mundo, o sistema tem que mostrar qual
+    escolheu.
+
 ---
 
 ## 3. Regras de UI

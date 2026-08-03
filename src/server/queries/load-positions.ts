@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull } from 'drizzle-orm'
 import { money, type Money } from '@/core/money/decimal'
 import { convertMoney, type DisplaySettings } from '@/core/money/display'
 import type { CurrencyCode } from '@/core/money/format'
@@ -75,11 +75,21 @@ export async function loadPositions(
       // de todo mundo aparecer na tela de qualquer um.
       //
       // Com as duas, é preciso que AS DUAS falhem para vazar.
+      // Posição zerada fica de fora das telas de patrimônio.
+      //
+      // Ela NÃO é apagada — vender tudo é fato econômico, e o lucro realizado,
+      // os lançamentos e o histórico continuam lá (CLAUDE.md §2.9). O que ela
+      // não é mais é patrimônio: listar um ativo com quantidade zero entre o
+      // que a pessoa possui faz a lista mentir sobre o presente.
+      //
+      // `> 0` e não `<> 0`: quantidade negativa é sinal de erro no ledger, e
+      // esconder isso da tela esconderia o próprio defeito.
       .where(
         and(
           eq(position.tenantId, tenantId),
           isNull(position.deletedAt),
           isNull(wallet.deletedAt),
+          gt(position.quantity, '0'),
         ),
       )
 

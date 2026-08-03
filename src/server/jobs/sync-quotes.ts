@@ -8,6 +8,7 @@ import { LOGO_TTL_DAYS } from '@/integrations/providers/logo'
 import { toPriceString, type InstrumentRef } from '@/integrations/providers/types'
 import type { AssetClassSlug } from '@/core/types/portfolio'
 import { fetchFxRates } from '@/integrations/fx/awesome-api'
+import { fetchFxHistory } from '@/integrations/fx/history'
 
 export interface SyncReport {
   instruments: number
@@ -124,25 +125,64 @@ export interface FxReport {
   error?: string
 }
 
-/** Câmbio. Separado das cotações: falha de um não pode derrubar o outro. */
+/**
+ * Câmbio. Separado das cotações: falha de um não pode derrubar o outro.
+ *
+ * O Banco Central vem primeiro. A AwesomeAPI é gratuita mas tem cota, e a cota
+ * estourou em uso normal — devolvendo `429` e deixando o sistema sem taxa
+ * nenhuma. Sem taxa, todo ativo em dólar é DESCARTADO na leitura (ver
+ * `load-positions`), e o patrimônio encolhe na tela sem que nada tenha
+ * acontecido com o patrimônio.
+ *
+ * A PTAX não tem cota, é a taxa oficial e é a mesma fonte que a importação usa
+ * para o histórico — uma fonte a menos para divergir do custo já gravado.
+ */
 export async function syncFxJob(): Promise<FxReport> {
   const db = getDb()
+
+  const gravar = async (rate: string, asOf: string, provider: string) => {
+    await db.insert(fxRate).values({
+      base: 'USD',
+      quoteCurrency: 'BRL',
+      rate,
+      asOf,
+      provider,
+    })
+  }
+
+  const motivos: string[] = []
+
+  try {
+    // Dez dias para trás: o dia de hoje pode não ter fechado, e feriadão deixa
+    // a série sem cotação por até quatro dias seguidos.
+    const hoje = new Date().toISOString().slice(0, 10)
+    const desde = new Date()
+    desde.setUTCDate(desde.getUTCDate() - 10)
+
+    const historia = await fetchFxHistory(desde.toISOString().slice(0, 10), hoje)
+    const datas = Object.keys(historia.rates).sort()
+    const ultima = datas[datas.length - 1]
+
+    if (ultima && historia.fonte) {
+      await gravar(historia.rates[ultima]!, ultima, historia.fonte)
+      return { pairs: 1 }
+    }
+
+    motivos.push(historia.erro ?? 'nenhuma cotação no período')
+  } catch (error) {
+    motivos.push(error instanceof Error ? error.message : 'falha na PTAX')
+  }
 
   try {
     const rates = await fetchFxRates(['USD-BRL'])
 
     for (const rate of rates) {
-      await db.insert(fxRate).values({
-        base: rate.base,
-        quoteCurrency: rate.quote,
-        rate: rate.rate,
-        asOf: rate.asOf.toISOString().slice(0, 10),
-        provider: 'awesomeapi',
-      })
+      await gravar(rate.rate, rate.asOf.toISOString().slice(0, 10), 'awesomeapi')
     }
 
     return { pairs: rates.length }
   } catch (error) {
-    return { pairs: 0, error: error instanceof Error ? error.message : 'Falha no câmbio' }
+    motivos.push(error instanceof Error ? error.message : 'falha na AwesomeAPI')
+    return { pairs: 0, error: motivos.join('. ') }
   }
 }

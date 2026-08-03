@@ -1,5 +1,6 @@
 import { PageHeader } from '@/components/layout/page-header'
 import { CatalogPanel } from '@/features/settings/catalog-panel'
+import { CryptoIdPanel } from '@/features/settings/crypto-id-panel'
 import { DangerPanel } from '@/features/settings/danger-panel'
 import { CurrencyPanel } from '@/features/settings/currency-panel'
 import { IncomePanel } from '@/features/settings/income-panel'
@@ -12,17 +13,19 @@ import { features } from '@/config/features'
 import { isMaster } from '@/server/auth/master'
 import { loadDisplaySettings } from '@/server/queries/display-settings'
 import { countCatalog } from '@/server/queries/catalog'
+import { loadCryptoIds } from '@/server/queries/crypto-ids'
 import { SettingsForm } from './settings-form'
 
 export default async function ConfiguracoesPage() {
   const context = await requireTenant()
 
-  const [last, display, logos, catalogTotal, master] = await Promise.all([
+  const [last, display, logos, catalogTotal, master, criptos] = await Promise.all([
     lastQuoteAt(),
     loadDisplaySettings(context.tenantId),
     listInstrumentLogos(),
     countCatalog(),
     isMaster(),
+    loadCryptoIds(context.user.id, context.tenantId),
   ])
 
   return (
@@ -35,6 +38,8 @@ export default async function ConfiguracoesPage() {
         <CatalogPanel total={catalogTotal} />
 
         <IncomePanel />
+
+        <CryptoIdPanel rows={criptos} />
 
         {features.dangerZone ? <DangerPanel /> : null}
 
