@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { and, asc, eq, isNull } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { computePosition } from '@/core/ledger/compute-position'
 import type { LedgerEntry, TransactionType } from '@/core/ledger/types'
 import { money } from '@/core/money/decimal'
@@ -36,7 +36,29 @@ export async function recomputePosition(tx: Tx, positionId: string): Promise<voi
     })
     .from(transaction)
     .where(and(eq(transaction.positionId, positionId), isNull(transaction.deletedAt)))
-    .orderBy(asc(transaction.occurredAt))
+    /**
+     * Ordem do replay: dia, depois ENTRADA antes de saída, depois inserção.
+     *
+     * Só `occurred_at` não bastava, e a falha era invisível. O ledger trabalha
+     * por dia — todo lançamento é carimbado ao meio-dia —, então dois negócios
+     * do mesmo dia têm o MESMO instante, e o Postgres devolve empate em ordem
+     * arbitrária. Comprar e vender a mesma quantidade no mesmo dia às vezes
+     * dava zero e às vezes dava a posição inteira, dependendo da ordem que o
+     * banco escolhesse naquela execução.
+     *
+     * Entrada antes de saída é a única ordem que não inventa patrimônio: uma
+     * venda sem posição é descartada pelo motor, e o que sobra é a compra —
+     * um ativo que a pessoa não tem mais, valendo dinheiro na tela.
+     *
+     * `created_at` desempata o resto, para o mesmo ledger reconstruir sempre
+     * igual: quantidade e preço médio são cache, e cache que muda sozinho
+     * entre dois recálculos não é cache, é ruído.
+     */
+    .orderBy(
+      asc(transaction.occurredAt),
+      sql`case when ${transaction.type} in ('SELL', 'TRANSFER_OUT') then 1 else 0 end`,
+      asc(transaction.createdAt),
+    )
 
   const entries: LedgerEntry[] = rows.map((row) => ({
     id: row.id,

@@ -172,6 +172,29 @@ describe('computePosition', () => {
   })
 })
 
+describe('a ordem das entradas é carga estrutural', () => {
+  // Este par de testes existe para deixar explícito o que `recomputePosition`
+  // está protegendo. O motor consome a lista NA ORDEM em que ela chega: quem
+  // monta a lista é responsável por ela estar certa.
+  const compra = () => entry('BUY', '2026-05-21', { quantity: '207', unitPrice: '20' })
+  const venda = () => entry('SELL', '2026-05-21', { quantity: '207', unitPrice: '57.48' })
+
+  it('compra antes de venda zera a posição, que é o fato', () => {
+    expect(computePosition([compra(), venda()]).quantity.toString()).toBe('0')
+  })
+
+  it('venda antes de compra inventa a posição inteira', () => {
+    // A venda não encontra estoque e é descartada; sobra a compra. O resultado
+    // é um ativo que a pessoa não tem mais, valendo dinheiro na tela.
+    //
+    // Os dois lançamentos são do MESMO dia e, no banco, do mesmo instante — o
+    // ledger carimba tudo ao meio-dia. Sem desempate explícito na consulta, o
+    // Postgres devolve empate em ordem arbitrária e o patrimônio muda de um
+    // recálculo para o outro. Ver a cláusula `order by` de `recomputePosition`.
+    expect(computePosition([venda(), compra()]).quantity.toString()).toBe('207')
+  })
+})
+
 describe('quantityAt — a pergunta da data-com', () => {
   const entries: LedgerEntry[] = [
     entry('BUY', '2024-01-10', { quantity: '1000', unitPrice: '25' }),

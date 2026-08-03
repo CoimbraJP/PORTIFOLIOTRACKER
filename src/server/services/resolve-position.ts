@@ -69,16 +69,36 @@ export async function resolvePosition(
   const isPrivate = definition.privateInstrument || catalogo === null
   const symbol = input.symbol.toUpperCase()
 
-  const [existente] = await tx
+  // O instrumento PRIVADO do tenant vence o global, sempre que existir.
+  //
+  // Ele só existe porque alguém corrigiu à mão qual moeda é aquele ticker
+  // (`setMarketId`). Preferir o global aqui desfaria a correção na próxima
+  // importação — o ativo voltaria a puxar o preço da moeda errada, e a pessoa
+  // teria que corrigir de novo sem entender por quê.
+  const [privado] = await tx
     .select({ id: instrument.id })
     .from(instrument)
     .where(
       and(
         eq(instrument.symbol, symbol),
-        isPrivate ? eq(instrument.tenantId, tenantId) : eq(instrument.isGlobal, true),
+        eq(instrument.tenantId, tenantId),
+        eq(instrument.isGlobal, false),
       ),
     )
     .limit(1)
+
+  const [existente] = privado
+    ? [privado]
+    : await tx
+        .select({ id: instrument.id })
+        .from(instrument)
+        .where(
+          and(
+            eq(instrument.symbol, symbol),
+            isPrivate ? eq(instrument.tenantId, tenantId) : eq(instrument.isGlobal, true),
+          ),
+        )
+        .limit(1)
 
   const instrumentId =
     existente?.id ??
