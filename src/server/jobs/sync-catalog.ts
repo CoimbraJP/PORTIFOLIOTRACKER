@@ -103,7 +103,18 @@ async function enrichInstruments(db: Database, entries: CatalogEntry[]): Promise
   )
   if (comDados.length === 0) return 0
 
-  const porSimbolo = new Map(comDados.map((e) => [e.symbol, e]))
+  // Primeira ocorrência vence, não a última.
+  //
+  // `new Map(lista.map(...))` faz o CONTRÁRIO: a última sobrescreve. Como as
+  // entradas chegam em ordem de valor de mercado, isso entregava o símbolo à
+  // moeda MENOR sempre que duas colidiam — e o `insert` logo acima, com
+  // `onConflictDoNothing`, entregava à MAIOR. As duas rotas do mesmo job
+  // discordando sobre qual moeda é "FLUID" é como um id errado entra sem que
+  // nada pareça errado.
+  const porSimbolo = new Map<string, CatalogEntry>()
+  for (const entrada of comDados) {
+    if (!porSimbolo.has(entrada.symbol)) porSimbolo.set(entrada.symbol, entrada)
+  }
 
   const alvos = await db
     .select({

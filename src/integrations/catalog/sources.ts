@@ -118,23 +118,48 @@ interface CoinGeckoCoin {
   image?: string | null
 }
 
+/** Páginas de 250. Quatro cobrem as mil maiores. */
+const COINGECKO_PAGINAS = 4
+
 /**
- * As 250 maiores por valor de mercado.
+ * As mil maiores por valor de mercado.
  *
  * Não a lista inteira: a CoinGecko cataloga mais de dez mil moedas, a maioria
  * sem liquidez, e oferecê-las no autocomplete atrapalharia mais do que ajuda.
+ *
+ * Eram 250, e 250 se mostrou pouco. Moeda fora do catálogo entra como
+ * instrumento privado SEM id de provedor — e sem id não há cotação, nunca. O
+ * ativo fica na carteira valendo zero para sempre, o que é pior do que não
+ * estar lá: um zero no meio do patrimônio parece um dado, não uma ausência.
+ *
  * O `id` vai junto porque é por ele que a cotação é buscada — ticker de cripto
- * colide, e sem o id o preço viria da moeda errada em silêncio.
+ * colide, e sem o id o preço viria da moeda errada em silêncio (CLAUDE.md §2.12).
  */
 export async function fetchCryptoCatalog(): Promise<CatalogEntry[]> {
-  const url = `${COINGECKO_MARKETS}?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false`
-  const rows = await fetchJson<CoinGeckoCoin[]>(url, { timeoutMs: 20_000 })
+  const entries: CatalogEntry[] = []
 
-  return rows.flatMap((row, index) => {
-    if (!row.id || !row.symbol) return []
+  for (let pagina = 1; pagina <= COINGECKO_PAGINAS; pagina += 1) {
+    const url =
+      `${COINGECKO_MARKETS}?vs_currency=usd&order=market_cap_desc` +
+      `&per_page=250&page=${pagina}&sparkline=false`
 
-    return [
-      {
+    let rows: CoinGeckoCoin[]
+
+    try {
+      rows = await fetchJson<CoinGeckoCoin[]>(url, { timeoutMs: 20_000 })
+    } catch (error) {
+      // Página que falha não derruba as anteriores: mil moedas menos duzentas e
+      // cinquenta ainda é muito melhor que zero. Só a primeira é obrigatória.
+      if (pagina === 1) throw error
+      break
+    }
+
+    if (rows.length === 0) break
+
+    for (const row of rows) {
+      if (!row.id || !row.symbol) continue
+
+      entries.push({
         symbol: row.symbol.toUpperCase(),
         name: row.name ?? row.symbol.toUpperCase(),
         classSlug: 'cripto' as const,
@@ -142,11 +167,19 @@ export async function fetchCryptoCatalog(): Promise<CatalogEntry[]> {
         exchange: null,
         logoUrl: row.image ?? null,
         externalIds: { coingecko: row.id },
-        rank: index,
+        // Continua sendo a posição no ranking geral, não dentro da página: é o
+        // `rank` que decide quem ganha o símbolo quando dois colidem.
+        rank: entries.length,
         provider: 'coingecko',
-      },
-    ]
-  })
+      })
+    }
+
+    // O plano gratuito limita chamadas por minuto. Uma pausa curta entre
+    // páginas custa segundos num job que roda uma vez por dia.
+    if (pagina < COINGECKO_PAGINAS) await new Promise((r) => setTimeout(r, 1500))
+  }
+
+  return entries
 }
 
 /* -------------------------------------------------------------------------- *
