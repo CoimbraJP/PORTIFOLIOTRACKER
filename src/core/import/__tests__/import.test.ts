@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { parseCsv } from '../parse-csv'
-import { diagnosticar, guessMapping } from '../guess-mapping'
+import { detectHeaderCurrency, diagnosticar, guessMapping } from '../guess-mapping'
 import { detectNumberFormat, parseDigitado, parseNumber } from '../parse-number'
 import { importKey, mapRows } from '../map-rows'
 import { ordenarParaLedger } from '../order-rows'
+import { sugerirCorrecoes } from '../suggest'
 
 /** Tradutor de classe de mentira: aceita o slug direto e mais nada. */
 const classes = (v: string) => (v.trim() ? v.trim().toLowerCase() : null)
@@ -361,6 +362,74 @@ describe('correção à mão na conferência', () => {
     expect(parseDigitado('146.750.446,05')).toBe('146750446.05')
     expect(parseDigitado('1,234.56')).toBe('1234.56')
     expect(parseDigitado('abc')).toBeNull()
+  })
+})
+
+describe('moeda declarada pelo arquivo', () => {
+  it('lê o dólar do nome da coluna', () => {
+    // Vence a escolha da tela: um arquivo em dólar importado como Real grava
+    // todo o custo cinco vezes menor, e o resultado é plausível demais para
+    // alguém notar.
+    expect(detectHeaderCurrency(['Date', 'Token', 'Price (USD)', 'Amount'])).toBe('USD')
+  })
+
+  it('lê o real também', () => {
+    expect(detectHeaderCurrency(['Data', 'Ativo', 'Preço (R$)'])).toBe('BRL')
+  })
+
+  it('não inventa quando o arquivo não diz', () => {
+    expect(detectHeaderCurrency(['Data', 'Ativo', 'Preço'])).toBeNull()
+  })
+
+  it('ignora parêntese que não é moeda', () => {
+    expect(detectHeaderCurrency(['Date (UTC-3:00)', 'Preço'])).toBeNull()
+  })
+})
+
+describe('sugestão para a linha multiplicada', () => {
+  const mapa = { date: 0, side: 1, symbol: 2, quantity: 3, unitPrice: 4, denomination: 5 }
+  const padrao = { classSlug: 'cripto', wallet: 'Teste' }
+
+  // Caso real: o CoinMarketCap exporta o negócio denominado em BTC com o preço
+  // MULTIPLICADO pela cotação do bitcoin em vez de dividido.
+  const linhas = [
+    ['01/03/2024', 'buy', 'ETH', '1', '3000', ''],
+    ['02/03/2024', 'buy', 'ETH', '1', '3100', ''],
+    ['03/03/2024', 'buy', 'ETH', '1', '2900', ''],
+    ['04/03/2024', 'buy', 'ETH', '5,5', '146750446,05', 'BTC'],
+    ['05/03/2024', 'buy', 'ETH', '1', '3050', ''],
+  ]
+
+  it('divide pela cotação da moeda em que o negócio foi denominado', () => {
+    const rows = sugerirCorrecoes(mapRows(linhas, mapa, classes, padrao), { BTC: '62668.61' })
+
+    expect(rows[3]?.sugestao?.unitPrice).toBe('2341.69')
+    // Continua marcada: a sugestão não se aplica sozinha.
+    expect(rows[3]?.aviso).toContain('acima do resto do arquivo')
+  })
+
+  it('não sugere quando não conhece a cotação da denominação', () => {
+    const rows = sugerirCorrecoes(mapRows(linhas, mapa, classes, padrao), {})
+
+    expect(rows[3]?.sugestao).toBeUndefined()
+  })
+
+  it('não sugere quando a divisão não resolve', () => {
+    // Divisor errado deixa a linha absurda do mesmo jeito. Oferecer um número
+    // quase certo para um problema que não entendemos é pior que não oferecer.
+    const rows = sugerirCorrecoes(mapRows(linhas, mapa, classes, padrao), { BTC: '2' })
+
+    expect(rows[3]?.sugestao).toBeUndefined()
+  })
+
+  it('não mexe em linha que o usuário já corrigiu', () => {
+    const rows = sugerirCorrecoes(
+      mapRows(linhas, mapa, classes, { ...padrao, correcoes: { 5: { unitPrice: '2341,69' } } }),
+      { BTC: '62668.61' },
+    )
+
+    expect(rows[3]?.sugestao).toBeUndefined()
+    expect(rows[3]?.unitPrice).toBe('2341.69')
   })
 })
 

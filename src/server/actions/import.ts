@@ -11,6 +11,8 @@ import { importSchema } from '@/server/validation/import'
 
 export interface FilePreview {
   nome: string
+  /** Moeda que o próprio arquivo declara. Vence a escolha da tela. */
+  moedaDoArquivo?: 'BRL' | 'USD'
   /** Por que este arquivo inteiro ficou de fora. */
   bloqueio?: string
   /** Como cada campo foi encontrado, para o usuário conferir antes de gravar. */
@@ -70,6 +72,7 @@ export async function previewImport(raw: unknown): Promise<PreviewResult> {
       ...(preparado.fx ? { fx: preparado.fx } : {}),
       arquivos: preparado.arquivos.map((prep) => ({
         nome: prep.nome,
+        ...(prep.moedaDoArquivo ? { moedaDoArquivo: prep.moedaDoArquivo } : {}),
         bloqueio: prep.bloqueio,
         reconhecido: Object.entries(prep.mapping).map(([campo, indice]) => ({
           campo: ROTULOS[campo] ?? campo,

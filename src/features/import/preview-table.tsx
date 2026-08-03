@@ -114,7 +114,18 @@ export function PreviewTable({
                 </td>
 
                 <td className="py-2">
-                  <Situacao row={row} />
+                  <Situacao
+                    row={row}
+                    onUsarSugestao={
+                      row.sugestao
+                        ? () =>
+                            onCorrigir(row.linha, {
+                              ...correcao,
+                              unitPrice: row.sugestao!.unitPrice.replace('.', ','),
+                            })
+                        : undefined
+                    }
+                  />
                 </td>
               </tr>
             )
@@ -160,15 +171,37 @@ function CampoCorrecao({
   )
 }
 
-function Situacao({ row }: { row: ImportedRow }) {
+function Situacao({
+  row,
+  onUsarSugestao,
+}: {
+  row: ImportedRow
+  onUsarSugestao?: () => void
+}) {
   if (row.erro) return <span className="text-negative">{row.erro}</span>
 
   if (row.aviso) {
     return (
-      <span className="inline-flex items-start gap-1.5 text-warning">
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        {row.aviso}
-      </span>
+      <div className="space-y-1.5">
+        <span className="inline-flex items-start gap-1.5 text-warning">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          {row.aviso}
+        </span>
+
+        {row.sugestao && onUsarSugestao ? (
+          <p className="text-fg-subtle">
+            {row.sugestao.motivo}. Sugerido:{' '}
+            <button
+              type="button"
+              onClick={onUsarSugestao}
+              className="numeric rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-accent transition-colors duration-[180ms] hover:border-accent/60 hover:bg-accent/20"
+            >
+              {row.sugestao.unitPrice.replace('.', ',')}
+            </button>{' '}
+            — confira antes de aceitar.
+          </p>
+        ) : null}
+      </div>
     )
   }
 

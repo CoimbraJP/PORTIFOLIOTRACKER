@@ -45,6 +45,9 @@ const ALIASES: Record<ImportField, string[]> = {
   currency: ['moeda', 'currency'],
   rate: ['dolar na data', 'cambio', 'taxa de cambio', 'dolar', 'fx'],
   fees: ['taxas', 'custos', 'corretagem', 'fees', 'emolumentos', 'fee'],
+  // Só serve de PISTA, nunca de moeda do lançamento. Ver `NUNCA` abaixo e
+  // `suggest.ts`.
+  denomination: ['fee currency', 'moeda da taxa', 'denominacao', 'quote asset'],
 }
 
 /**
@@ -76,6 +79,32 @@ const NUNCA: Record<string, ImportField[]> = {
 
 /** Sem estes quatro não existe lançamento: não dá para importar nada. */
 export const OBRIGATORIOS: ImportField[] = ['date', 'symbol', 'quantity', 'unitPrice']
+
+/**
+ * A moeda que o próprio arquivo declara no nome da coluna.
+ *
+ * `Price (USD)` não deixa dúvida: aquele preço é em dólar. Ler isso vale mais
+ * do que qualquer opção de tela, porque o erro contrário não faz barulho — um
+ * arquivo do CoinMarketCap importado como Real grava todo o custo cinco vezes
+ * menor, e o patrimônio resultante é plausível. Nada estoura, nada avisa, e a
+ * conta só não bate com a corretora.
+ *
+ * Devolve nulo quando o arquivo não diz. Aí, e só aí, a escolha da tela vale.
+ */
+export function detectHeaderCurrency(headers: string[]): 'BRL' | 'USD' | null {
+  const precos = ['preco', 'price', 'valor', 'value', 'total', 'cotacao']
+
+  for (const header of headers) {
+    const texto = normalizar(header)
+    if (!precos.some((p) => texto.startsWith(p))) continue
+
+    const dentro = /\(([^)]*)\)/.exec(texto)?.[1] ?? ''
+    if (/usd|us\$|dolar|dollar/.test(dentro)) return 'USD'
+    if (/brl|r\$|real|reais/.test(dentro)) return 'BRL'
+  }
+
+  return null
+}
 
 /**
  * Diz o que impede este arquivo de ser importado — antes de tentar linha a linha.

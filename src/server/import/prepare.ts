@@ -1,14 +1,17 @@
 import 'server-only'
 
 import {
+  detectHeaderCurrency,
   detectNumberFormat,
   diagnosticar,
   guessMapping,
   mapRows,
   parseCsv,
+  sugerirCorrecoes,
   type ColumnMap,
   type ImportedRow,
 } from '@/core/import'
+import { fetchSpotPrices } from '@/integrations/providers/coingecko'
 import { assetClass as assetClassConfig } from '@/config/asset-classes'
 import type { AssetClassSlug } from '@/core/types/portfolio'
 import { fetchFxHistory, preencherLacunas } from '@/integrations/fx/history'
@@ -17,6 +20,12 @@ import type { ArquivoInput, ImportInput } from '@/server/validation/import'
 
 export interface PreparedFile {
   nome: string
+  /**
+   * A moeda que o ARQUIVO declara no cabeçalho, quando declara.
+   *
+   * Vence a escolha da tela. Ver `detectHeaderCurrency`.
+   */
+  moedaDoArquivo?: 'BRL' | 'USD'
   rows: ImportedRow[]
   mapping: ColumnMap
   headers: string[]
@@ -55,7 +64,7 @@ export async function prepararImportacao(input: ImportInput): Promise<Prepared> 
   // Câmbio de UMA vez para a leva inteira: quatro arquivos do mesmo período
   // pediriam quatro vezes o mesmo intervalo à mesma API.
   const datas = lidos.flatMap((r) => (r.precisaCambio ? r.prep.rows.map((l) => l.date) : []))
-  if (datas.length === 0) return { arquivos: lidos.map((r) => r.prep) }
+  if (datas.length === 0) return { arquivos: await propor(lidos.map((r) => r.prep)) }
 
   const cambio = await buscarCambio(datas)
   const classes = buildClassLookup()
@@ -70,7 +79,7 @@ export async function prepararImportacao(input: ImportInput): Promise<Prepared> 
       {
         classSlug: slug,
         wallet: arquivo.wallet,
-        currency: input.currency,
+        currency: prep.moedaDoArquivo ?? input.currency,
         rates: cambio.rates,
         correcoes: numerarLinhas(arquivo.correcoes),
       },
@@ -80,7 +89,35 @@ export async function prepararImportacao(input: ImportInput): Promise<Prepared> 
     return { ...prep, rows }
   })
 
-  return { arquivos, fx: cambio }
+  return { arquivos: await propor(arquivos), fx: cambio }
+}
+
+/**
+ * Anexa a sugestão de preço às linhas marcadas como absurdas.
+ *
+ * Busca a cotação de agora das criptos em que aquelas linhas foram denominadas
+ * — é o divisor do defeito descrito em `suggest.ts`. Falha na busca some sem
+ * barulho: sugestão é conveniência, e a linha continua marcada e editável.
+ */
+async function propor(arquivos: PreparedFile[]): Promise<PreparedFile[]> {
+  const denominacoes = new Set(
+    arquivos.flatMap((a) => a.rows.filter((r) => r.aviso && r.denominacao).map((r) => r.denominacao)),
+  )
+
+  if (denominacoes.size === 0) return arquivos
+
+  // A âncora precisa estar na MESMA moeda do preço da linha, senão a divisão
+  // troca o erro de multiplicação por um erro de câmbio.
+  const emDolar = arquivos.some((a) => a.rows.some((r) => r.currency === 'USD'))
+
+  try {
+    const precos = await fetchSpotPrices([...denominacoes], emDolar ? 'usd' : 'brl')
+    if (Object.keys(precos).length === 0) return arquivos
+
+    return arquivos.map((a) => ({ ...a, rows: sugerirCorrecoes(a.rows, precos) }))
+  } catch {
+    return arquivos
+  }
 }
 
 interface Leitura {
@@ -100,12 +137,19 @@ function lerArquivo(
   const mapping = guessMapping(tabela.headers)
   const formato = detectNumberFormat(tabela.rows.flat())
 
+  // O arquivo tem a última palavra sobre a própria moeda. Um CSV com
+  // `Price (USD)` importado como Real gravaria todo o custo cinco vezes menor,
+  // e o resultado é plausível demais para alguém notar.
+  const doCabecalho = detectHeaderCurrency(tabela.headers)
+  const moeda = doCabecalho ?? currency
+
   const base: PreparedFile = {
     nome: arquivo.nome,
     rows: [],
     mapping,
     headers: tabela.headers,
     delimiter: tabela.delimiter,
+    ...(doCabecalho ? { moedaDoArquivo: doCabecalho } : {}),
   }
 
   const impedimento = diagnosticar(tabela.headers, mapping)
@@ -117,7 +161,12 @@ function lerArquivo(
     tabela.rows,
     mapping,
     buildClassLookup(),
-    { classSlug: slug, wallet: arquivo.wallet, currency, correcoes: numerarLinhas(arquivo.correcoes) },
+    {
+      classSlug: slug,
+      wallet: arquivo.wallet,
+      currency: moeda,
+      correcoes: numerarLinhas(arquivo.correcoes),
+    },
     formato,
   )
 

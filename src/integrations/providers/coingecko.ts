@@ -123,3 +123,39 @@ export class CoinGeckoProvider implements PriceProvider {
     }
   }
 }
+
+/**
+ * Preço de agora de algumas moedas, pelo id da CoinGecko.
+ *
+ * Existe para a importação deduzir o divisor de uma linha que o exportador
+ * multiplicou por uma cotação. Não vira lançamento nem cotação gravada — é uma
+ * sugestão de tela, e por isso pode usar o preço de hoje sem violar a regra de
+ * que custo de aquisição nasce de fato, não de estimativa.
+ */
+export async function fetchSpotPrices(
+  symbols: string[],
+  vsCurrency: 'usd' | 'brl',
+): Promise<Record<string, string>> {
+  const ids = new Map<string, string>()
+
+  for (const symbol of symbols) {
+    const id = KNOWN_IDS[symbol.toUpperCase()]
+    if (id) ids.set(id, symbol.toUpperCase())
+  }
+
+  if (ids.size === 0) return {}
+
+  const url =
+    `${BASE}/simple/price?ids=${[...ids.keys()].join(',')}` + `&vs_currencies=${vsCurrency}`
+
+  const dados = await fetchJson<Record<string, Record<string, number>>>(url)
+  const precos: Record<string, string> = {}
+
+  for (const [id, symbol] of ids) {
+    const valor = dados[id]?.[vsCurrency]
+    const texto = toPriceString(valor)
+    if (texto) precos[symbol] = texto
+  }
+
+  return precos
+}

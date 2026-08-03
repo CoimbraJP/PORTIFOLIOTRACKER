@@ -296,6 +296,12 @@ export function ImportPanel() {
               <section key={arquivo.nome}>
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <h3 className="text-[0.875rem] font-medium text-fg">{arquivo.nome}</h3>
+                  {arquivo.moedaDoArquivo && arquivo.moedaDoArquivo !== currency ? (
+                    <span className="rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-caption normal-case tracking-normal text-accent">
+                      o arquivo diz {arquivo.moedaDoArquivo === 'USD' ? 'dólar' : 'real'} — foi o que
+                      usei
+                    </span>
+                  ) : null}
                   {arquivo.bloqueio ? null : (
                     <span className="text-[0.8125rem] text-fg-subtle">
                       {arquivo.rows.filter((r) => !r.erro).length} de {arquivo.rows.length}

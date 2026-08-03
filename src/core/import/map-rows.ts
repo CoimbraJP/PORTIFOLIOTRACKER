@@ -14,6 +14,7 @@ export type ImportField =
   | 'currency'
   | 'rate'
   | 'fees'
+  | 'denomination'
 
 export type ColumnMap = Partial<Record<ImportField, number>>
 
@@ -65,6 +66,21 @@ export interface ImportedRow {
    * preço não bate com o extrato?" precisa ter resposta.
    */
   corrigido?: { campo: 'unitPrice' | 'quantity'; de: string }[]
+  /**
+   * Em que ativo o negócio foi DENOMINADO, quando o arquivo diz.
+   *
+   * Não é a moeda do lançamento — é a pista de um defeito conhecido de
+   * exportador. Ver `suggest.ts`.
+   */
+  denominacao: string
+  /**
+   * Preço que o sistema acha que a linha deveria ter, com o motivo.
+   *
+   * Sugestão, nunca aplicada sozinha: é deduzida de um preço de mercado de
+   * hoje, e um custo de aquisição deduzido não pode entrar no ledger sem
+   * alguém confirmar.
+   */
+  sugestao?: { unitPrice: string; motivo: string }
   /** Por que esta linha não pode entrar. Vazio quando está boa. */
   erro?: string
   /**
@@ -173,6 +189,7 @@ export function mapRows(
       currency: defaults.currency ?? 'BRL',
       rate: '1',
       fees: '0',
+      denominacao: '',
       ocorrencia: 0,
     }
 
@@ -236,6 +253,8 @@ export function mapRows(
     if (corrigido.length > 0) base.corrigido = corrigido
     // Taxa ausente vem como "--" em vários exportadores. Ausente é zero.
     base.fees = parseNumber(pegar(linha, 'fees'), formato) ?? '0'
+
+    base.denominacao = pegar(linha, 'denomination').trim().toUpperCase()
 
     const moedaBruta = normalizar(pegar(linha, 'currency'))
     if (moedaBruta) {
