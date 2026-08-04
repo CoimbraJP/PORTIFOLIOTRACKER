@@ -56,6 +56,10 @@ export function ClassWorkspace({ initial }: { initial: ClassWorkspaceView }) {
   const router = useRouter()
   const [scopeId, setScopeId] = useState(OVERVIEW_SCOPE)
   const [dialogOpen, setDialogOpen] = useState(false)
+  // Só true quando o clique foi especificamente em "Criar carteira" — o
+  // formulário nasce apontando pra criação, em vez de pousar na primeira
+  // carteira existente e obrigar quem clicou ali a trocar de opção sozinho.
+  const [startWithNewWallet, setStartWithNewWallet] = useState(false)
   const [transactionTarget, setTransactionTarget] = useState<TransactionTarget | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('assets')
@@ -254,7 +258,10 @@ export function ClassWorkspace({ initial }: { initial: ClassWorkspaceView }) {
           workspace={workspace}
           activeId={scope.id}
           onSelect={setScopeId}
-          onAdd={() => setDialogOpen(true)}
+          onAdd={() => {
+            setStartWithNewWallet(true)
+            setDialogOpen(true)
+          }}
         />
 
         {/*
@@ -435,7 +442,10 @@ export function ClassWorkspace({ initial }: { initial: ClassWorkspaceView }) {
                 <WalletSection
                   workspace={workspace}
                   wallets={filtered.wallets}
-                  onAdd={() => setDialogOpen(true)}
+                  onAdd={() => {
+                    setStartWithNewWallet(false)
+                    setDialogOpen(true)
+                  }}
                   onTransact={openTransaction}
                 />
               ) : (
@@ -445,7 +455,10 @@ export function ClassWorkspace({ initial }: { initial: ClassWorkspaceView }) {
                   wallets={filtered.wallets}
                   query={query}
                   showWalletBreakdown={isOverview}
-                  onAdd={() => setDialogOpen(true)}
+                  onAdd={() => {
+                    setStartWithNewWallet(false)
+                    setDialogOpen(true)
+                  }}
                   onTransact={openTransaction}
                   onRemove={handleRemove}
                 />
@@ -461,6 +474,7 @@ export function ClassWorkspace({ initial }: { initial: ClassWorkspaceView }) {
         workspace={workspace}
         onSubmit={handleAdd}
         pending={pending}
+        startWithNewWallet={startWithNewWallet}
       />
 
       <TransactionDialog

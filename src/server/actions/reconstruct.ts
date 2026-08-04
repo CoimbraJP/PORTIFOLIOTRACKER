@@ -7,7 +7,7 @@ import { toProposals, type Proposal } from '@/core/reconstruct/to-proposals'
 import type { YearSnapshot } from '@/core/reconstruct/types'
 import type { AssetClassSlug } from '@/core/types/portfolio'
 import { requireTenant } from '@/server/auth/session'
-import { dailySnapshotJob } from '@/server/jobs/daily-snapshot'
+import { refazerSnapshotSemFalhar } from '@/server/jobs/daily-snapshot'
 import { gravarReconstrucao, type ReconstructReport } from '@/server/reconstruct/commit'
 import { gravarAnualSchema, lerAnualSchema } from '@/server/validation/reconstruct'
 
@@ -106,22 +106,27 @@ export async function gravarRelatoriosAnuais(raw: unknown): Promise<GravarAnualR
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
   }
 
+  let report: ReconstructReport
+
   try {
-    const report = await gravarReconstrucao(
+    report = await gravarReconstrucao(
       context.user.id,
       context.tenantId,
       parsed.data.classSlug as AssetClassSlug,
       parsed.data.wallet,
       parsed.data.propostas as Proposal[],
     )
-
-    if (report.gravados > 0) {
-      await dailySnapshotJob()
-      revalidatePath('/', 'layout')
-    }
-
-    return { ok: true, report }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido.' }
   }
+
+  if (report.gravados > 0) {
+    // O histórico já foi gravado com sucesso neste ponto — uma falha ao
+    // refazer a foto do dia não pode voltar como erro para uma reconstrução
+    // que já aconteceu.
+    await refazerSnapshotSemFalhar()
+    revalidatePath('/', 'layout')
+  }
+
+  return { ok: true, report }
 }

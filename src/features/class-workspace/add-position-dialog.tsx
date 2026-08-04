@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Dialog } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Field, Input, Select } from '@/components/ui/input'
@@ -20,6 +20,13 @@ export interface AddPositionDialogProps {
   workspace: ClassWorkspaceView
   onSubmit: (draft: NewPositionInput) => void
   pending: boolean
+  /**
+   * `true` quando o clique que abriu o diálogo foi especificamente em "Criar
+   * {carteira}" (ver `ScopeRail`) — o formulário já nasce na opção de criar,
+   * em vez de pousar na primeira carteira existente e obrigar quem clicou ali
+   * a trocar de opção sozinho.
+   */
+  startWithNewWallet?: boolean
 }
 
 /**
@@ -35,11 +42,20 @@ export function AddPositionDialog({
   workspace,
   onSubmit,
   pending,
+  startWithNewWallet = false,
 }: AddPositionDialogProps) {
   const { labels, walletTerm, assetTerm } = workspace
   const isQuantitative = labels.quantity !== null
 
   const [walletId, setWalletId] = useState(workspace.walletOptions[0]?.id ?? NEW_WALLET)
+
+  // O diálogo não desmonta ao fechar (só o `Dialog` esconde o conteúdo), então
+  // o `useState` acima só roda uma vez — sem isto, abrir de novo pelo botão
+  // "Criar carteira" repetiria o walletId da última vez que o forms abriu.
+  useEffect(() => {
+    if (!open) return
+    setWalletId(startWithNewWallet ? NEW_WALLET : (workspace.walletOptions[0]?.id ?? NEW_WALLET))
+  }, [open, startWithNewWallet, workspace.walletOptions])
   const [newWalletName, setNewWalletName] = useState('')
   const [symbol, setSymbol] = useState('')
   const [name, setName] = useState('')

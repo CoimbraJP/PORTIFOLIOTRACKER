@@ -10,7 +10,7 @@ import type { AssetClassSlug } from '@/core/types/portfolio'
 import { withRls } from '@/db/rls'
 import { assetClass, position, transaction, valuation, wallet } from '@/db/schema'
 import { requireTenant } from '@/server/auth/session'
-import { dailySnapshotJob } from '@/server/jobs/daily-snapshot'
+import { refazerSnapshotSemFalhar } from '@/server/jobs/daily-snapshot'
 import { findInCatalog } from '@/server/services/catalog-lookup'
 import { recomputePosition } from '@/server/services/recompute-position'
 import { resolvePosition } from '@/server/services/resolve-position'
@@ -57,11 +57,15 @@ export async function createPosition(raw: unknown): Promise<ActionResult> {
   //
   // A verificação é do SERVIDOR. O formulário já pergunta, mas confiar nele
   // deixaria a decisão nas mãos de quem manda a requisição.
-  const catalogo = definition.privateInstrument
-    ? null
-    : await findInCatalog(slug, input.symbol)
-
+  //
+  // Dentro do try: é uma consulta ao banco como outra qualquer, e uma falha
+  // de conexão aqui não pode escapar como exceção não tratada — a pessoa só
+  // veria um erro genérico em vez da mensagem que esta action sempre devolve.
   try {
+    const catalogo = definition.privateInstrument
+      ? null
+      : await findInCatalog(slug, input.symbol)
+
     await withRls(context.user.id, async (tx) => {
       const occurredAt = input.occurredAt ?? new Date().toISOString().slice(0, 10)
 
@@ -208,15 +212,15 @@ export async function deletePosition(positionId: string): Promise<ActionResult> 
 
       if (!alvo) throw new Error('Ativo não encontrado.')
     })
-
-    // A foto de hoje já pode ter sido tirada COM o valor errado, e snapshot não
-    // se recalcula sozinho. Sem isto, apagar a posição limparia as telas e
-    // deixaria o pico no gráfico de evolução para sempre — no único lugar onde
-    // o usuário não olharia para conferir.
-    await dailySnapshotJob()
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido.' }
   }
+
+  // O ativo já foi apagado com sucesso neste ponto — o que vem daqui não pode
+  // mais transformar essa operação em erro. A foto de hoje já pode ter sido
+  // tirada COM o valor errado, e snapshot não se recalcula sozinho, mas uma
+  // falha em refazê-la não desfaz a exclusão: só atrasa o gráfico um dia.
+  await refazerSnapshotSemFalhar()
 
   revalidatePath('/', 'layout')
   return { ok: true }

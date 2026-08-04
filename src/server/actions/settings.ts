@@ -86,11 +86,6 @@ const logoSchema = z.object({
  * em tabela própria, com RLS, e apagar a linha restaura o automático.
  */
 export async function saveLogoOverride(raw: unknown): Promise<ActionResult> {
-  // Restrito ao operador. A verificação é AQUI, não só no botão: esconder na
-  // interface não protege — a Server Action continua sendo um endpoint, e quem
-  // souber o nome dela chama direto.
-  await requireMaster()
-
   const context = await requireTenant()
 
   const parsed = logoSchema.safeParse(raw)
@@ -101,6 +96,15 @@ export async function saveLogoOverride(raw: unknown): Promise<ActionResult> {
   const { instrumentId, logoUrl } = parsed.data
 
   try {
+    // Restrito ao operador. A verificação é AQUI, não só no botão: esconder na
+    // interface não protege — a Server Action continua sendo um endpoint, e quem
+    // souber o nome dela chama direto.
+    //
+    // Dentro do try: `requireMaster` lança um `Error` de verdade (diferente do
+    // `redirect()` de `requireTenant`, que o framework trata à parte). Fora
+    // daqui, esse throw escaparia sem o `{ ok: false }` que esta action promete.
+    await requireMaster()
+
     await withRls(context.user.id, async (tx) => {
       if (!logoUrl) {
         await tx

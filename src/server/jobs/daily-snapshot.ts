@@ -184,3 +184,29 @@ function toPlain(map: Map<string, Money>): Record<string, string> {
   for (const [key, value] of map) result[key] = value.toFixed(2)
   return result
 }
+
+/**
+ * Refaz a foto do dia depois de uma escrita que JÁ terminou com sucesso.
+ *
+ * Excluir um ativo, editar um lançamento, importar ou reconstruir histórico
+ * são operações atômicas por si — cada uma já commitou dentro da própria
+ * transação antes de chegar aqui. O que vem depois é só manutenção do gráfico
+ * de evolução, e uma falha nele não pode virar `{ ok: false }` para uma
+ * operação que o usuário já viu (ou vai ver) como concluída. Reportar "deu
+ * erro" para algo que funcionou é pior do que não reportar nada: a pessoa
+ * tenta de novo, se confunde com o resultado, ou desconfia do sistema à toa.
+ *
+ * Por isso este helper nunca propaga — ele registra e segue. O pior caso é o
+ * gráfico ficar um dia atrasado até a próxima sincronização, o que já é a
+ * mesma tolerância que o job noturno tem para qualquer outro atraso.
+ */
+export async function refazerSnapshotSemFalhar(): Promise<void> {
+  try {
+    await dailySnapshotJob()
+  } catch (error) {
+    console.error(
+      '[daily-snapshot] falhou depois de uma escrita já confirmada — gráfico fica um dia atrasado:',
+      error,
+    )
+  }
+}

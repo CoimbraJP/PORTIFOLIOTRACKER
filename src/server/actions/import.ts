@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import type { AssetClassSlug } from '@/core/types/portfolio'
 import type { ImportedRow } from '@/core/import'
 import { requireTenant } from '@/server/auth/session'
-import { dailySnapshotJob } from '@/server/jobs/daily-snapshot'
+import { refazerSnapshotSemFalhar } from '@/server/jobs/daily-snapshot'
 import { gravarImportacao, type ImportReport } from '@/server/import/commit'
 import { prepararImportacao } from '@/server/import/prepare'
 import { importSchema } from '@/server/validation/import'
@@ -108,6 +108,8 @@ export async function commitImport(raw: unknown): Promise<CommitResult> {
     return { ok: false, error: parsed.error.issues[0]?.message ?? 'Dados inválidos.' }
   }
 
+  let report: ImportReport
+
   try {
     const preparado = await prepararImportacao(parsed.data)
 
@@ -124,23 +126,24 @@ export async function commitImport(raw: unknown): Promise<CommitResult> {
       return { ok: false, error: motivo }
     }
 
-    const report = await gravarImportacao(
+    report = await gravarImportacao(
       context.user.id,
       context.tenantId,
       parsed.data.classSlug as AssetClassSlug,
       linhas,
     )
-
-    if (report.importados > 0) {
-      // A foto do dia foi tirada antes destes lançamentos existirem, e snapshot
-      // não se recalcula sozinho: sem isto o aporte importado só apareceria no
-      // gráfico de evolução amanhã (CLAUDE.md §2.9).
-      await dailySnapshotJob()
-      revalidatePath('/', 'layout')
-    }
-
-    return { ok: true, report }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido.' }
   }
+
+  if (report.importados > 0) {
+    // Os lançamentos já foram gravados com sucesso neste ponto. Refazer a foto
+    // do dia é manutenção do gráfico de evolução, não parte da importação —
+    // uma falha aqui não pode devolver `ok: false` para dados que já entraram
+    // (CLAUDE.md §2.9 pede a foto refeita, não pede que a falta dela vire erro).
+    await refazerSnapshotSemFalhar()
+    revalidatePath('/', 'layout')
+  }
+
+  return { ok: true, report }
 }

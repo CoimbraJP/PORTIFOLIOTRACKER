@@ -6,7 +6,7 @@ import { money } from '@/core/money/decimal'
 import { withRls } from '@/db/rls'
 import { position, transaction } from '@/db/schema'
 import { requireTenant } from '@/server/auth/session'
-import { dailySnapshotJob } from '@/server/jobs/daily-snapshot'
+import { refazerSnapshotSemFalhar } from '@/server/jobs/daily-snapshot'
 import { recomputePosition } from '@/server/services/recompute-position'
 import { editTransactionSchema } from '@/server/validation/transaction'
 import type { z } from 'zod'
@@ -82,13 +82,15 @@ export async function updateTransaction(raw: unknown): Promise<ActionResult> {
 
       await recomputePosition(tx, atual.positionId)
     })
-
-    // A foto do dia foi tirada com o valor antigo. Sem refazê-la, a correção
-    // aparece nas telas e o gráfico de evolução continua mostrando o erro.
-    await dailySnapshotJob()
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido.' }
   }
+
+  // O lançamento já foi corrigido com sucesso neste ponto. A foto do dia foi
+  // tirada com o valor antigo e precisa ser refeita, mas uma falha aqui não
+  // desfaz a correção — só atrasa o gráfico, e não pode voltar como erro para
+  // uma operação que já terminou.
+  await refazerSnapshotSemFalhar()
 
   revalidatePath('/', 'layout')
   return { ok: true }
@@ -156,11 +158,11 @@ export async function deleteTransaction(id: string): Promise<ActionResult> {
         await recomputePosition(tx, posicao)
       }
     })
-
-    await dailySnapshotJob()
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : 'Erro desconhecido.' }
   }
+
+  await refazerSnapshotSemFalhar()
 
   revalidatePath('/', 'layout')
   return { ok: true }

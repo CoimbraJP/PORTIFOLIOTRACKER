@@ -23,23 +23,28 @@ export interface AdminResult {
  * não existe mais.
  */
 export async function deleteAccount(userId: string): Promise<AdminResult> {
-  await requireMaster()
-
   if (!/^[0-9a-f-]{36}$/i.test(userId)) {
     return { ok: false, error: 'Conta inválida.' }
   }
 
-  // O operador não pode se apagar.
-  //
-  // Não é paternalismo: sem operador, ninguém mais administra o sistema, e a
-  // recuperação exigiria mexer no banco na mão. Um clique errado não deveria
-  // custar isso.
-  const atual = await getSessionUser()
-  if (atual?.id === userId) {
-    return { ok: false, error: 'Você não pode apagar a própria conta por aqui.' }
-  }
-
   try {
+    // Dentro do try, e não antes: `requireMaster` lança um `Error` de verdade
+    // (diferente de `requireTenant`, cujo `redirect()` o framework trata à
+    // parte). Deixá-lo fora deixaria escapar sem o `{ ok: false }` que esta
+    // action sempre promete — sessão de operador expirada no meio da tela
+    // viraria um erro genérico em vez da mensagem de permissão.
+    await requireMaster()
+
+    // O operador não pode se apagar.
+    //
+    // Não é paternalismo: sem operador, ninguém mais administra o sistema, e a
+    // recuperação exigiria mexer no banco na mão. Um clique errado não deveria
+    // custar isso.
+    const atual = await getSessionUser()
+    if (atual?.id === userId) {
+      return { ok: false, error: 'Você não pode apagar a própria conta por aqui.' }
+    }
+
     const { error } = await createAdminClient().auth.admin.deleteUser(userId)
     if (error) throw new Error(error.message)
   } catch (error) {
