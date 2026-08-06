@@ -5,6 +5,7 @@ import { DangerPanel } from '@/features/settings/danger-panel'
 import { CurrencyPanel } from '@/features/settings/currency-panel'
 import { IncomePanel } from '@/features/settings/income-panel'
 import { LogoPanel } from '@/features/settings/logo-panel'
+import { SimulationPanel } from '@/features/settings/simulation-panel'
 import { SyncPanel } from '@/features/settings/sync-panel'
 import { lastQuoteAt } from '@/server/actions/sync'
 import { listInstrumentLogos } from '@/server/actions/settings'
@@ -40,6 +41,10 @@ export default async function ConfiguracoesPage() {
         <IncomePanel />
 
         <CryptoIdPanel rows={criptos} />
+
+        {/* Ao lado da zona de perigo de propósito: as duas mexem no patrimônio
+            inteiro de uma vez, e é bom que morem no mesmo canto da tela. */}
+        {features.dangerZone ? <SimulationPanel /> : null}
 
         {features.dangerZone ? <DangerPanel /> : null}
 
