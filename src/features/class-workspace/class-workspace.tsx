@@ -18,6 +18,7 @@ import { ViewSwitcher } from '@/components/layout/view-switcher'
 import { matches, useCollapsedShell, useSearchScope } from '@/components/layout/shell-provider'
 import { assetClass } from '@/config/asset-classes'
 import { formatMoney } from '@/core/money/format'
+import { downloadCsv } from '@/lib/export-csv'
 import { icon } from '@/lib/icons'
 import { createPosition, deletePosition } from '@/server/actions/position'
 import {
@@ -161,6 +162,49 @@ export function ClassWorkspace({ initial }: { initial: ClassWorkspaceView }) {
     })
   }
 
+  /**
+   * Exporta o recorte atual — o mesmo filtro de busca que a tela mostra, não a
+   * classe inteira por baixo dele. Quem filtrou "PETR" antes de exportar quer
+   * PETR4 no arquivo, não a carteira toda.
+   */
+  function handleExport() {
+    const linhas = filtered.consolidated.map((a) => [
+      a.symbol,
+      a.name,
+      a.quantity,
+      a.avgPrice.text,
+      a.currentPrice.text,
+      a.currentValue.text,
+      a.totalCost.text,
+      a.income.text,
+      a.profit.text,
+      a.change.text,
+      a.walletNames.join(', '),
+    ])
+
+    const nomeArquivo =
+      `${workspace.name} - ${scope.label} - ${new Date().toISOString().slice(0, 10)}.csv`
+        .replace(/[/\\?%*:|"<>]/g, '-')
+
+    downloadCsv(
+      nomeArquivo,
+      [
+        'Código',
+        'Nome',
+        'Quantidade',
+        workspace.labels.unitCost,
+        workspace.labels.unitValue,
+        'Valor atual',
+        'Custo total',
+        'Rendimentos',
+        'Lucro',
+        'Variação',
+        workspace.walletTerm.many,
+      ],
+      linhas,
+    )
+  }
+
   function handleAdd(input: NewPositionInput) {
     setError(null)
 
@@ -228,7 +272,17 @@ export function ClassWorkspace({ initial }: { initial: ClassWorkspaceView }) {
                 <Plus size={15} strokeWidth={2.2} />
                 {workspace.labels.addAction}
               </Button>
-              <Button variant="secondary" size="sm" disabled title="Disponível na Fase 6">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleExport}
+                disabled={filtered.consolidated.length === 0}
+                title={
+                  filtered.consolidated.length === 0
+                    ? 'Nada para exportar neste recorte'
+                    : undefined
+                }
+              >
                 <Download size={14} strokeWidth={2} />
                 Exportar
               </Button>
