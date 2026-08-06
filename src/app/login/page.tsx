@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { ShieldOff } from 'lucide-react'
 import { FadeIn } from '@/components/motion/fade-in'
 import { Skeleton } from '@/components/ui/skeleton'
+import { DemoButtons } from './demo-buttons'
 import { LoginButton } from './login-button'
 
 export const metadata = { title: 'Entrar · Patrimônio' }
@@ -54,6 +55,10 @@ export default async function LoginPage({
             <ShieldOff size={16} strokeWidth={1.9} />
             Entrar sem identificação
           </Link>
+
+          {/* Por último: quem já tem conta não deveria tropeçar na
+              demonstração no caminho para entrar na dela. */}
+          <DemoButtons />
         </div>
 
         <p className="mt-6 text-caption normal-case leading-relaxed tracking-normal text-fg-subtle">
